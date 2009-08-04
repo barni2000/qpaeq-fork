@@ -21,9 +21,9 @@ def translate_rates(dst,src,rates):
 def hz2str(hz):
     p=math.floor(math.log(hz,10.0))
     if p<3:
-        return '{0} Hz'.format(hz)
+        return '%dHz' %(hz,)
     elif p>=3:
-        return '{0:.1f} KHz'.format(hz/(10.0**3))
+        return '%.1fKHz' %(hz/(10.0**3),)
 #values = the destination array 
 #points = list of tuples of frequency and coefficient
 def interpolate(values,points):
