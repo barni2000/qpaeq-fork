@@ -45,7 +45,7 @@ def interpolate(values,points):
         i+=1
 
 class QPaeq(QtGui.QWidget):
-    DEFAULT_FREQUENCIES=map(float,[50,100,200,400,800,1.5e3,3e3,5e3,7e3,10e3,15e3])
+    DEFAULT_FREQUENCIES=map(float,[50,100,200,300,400,500,800,1e3,1.5e3,3e3,5e3,7e3,10e3,15e3,20e3])
     sink_iface='org.PulseAudio.Ext.Equalizing1.Equalizer'
     def __init__(self):
         QtGui.QWidget.__init__(self)
@@ -54,7 +54,7 @@ class QPaeq(QtGui.QWidget):
         self.set_connection()
         self.set_frequencies_values(self.DEFAULT_FREQUENCIES)
         self.coefficients=[0.0]*len(self.filter_frequencies)
-        self.reset_button=QtGui.QPushButton("Reset")
+        self.reset_button=QtGui.QPushButton('Reset')
         self.reset_button.clicked.connect(self.reset)
         layout=self.create_slider_layout()
         layout.addWidget(self.reset_button)
@@ -100,24 +100,24 @@ class QPaeq(QtGui.QWidget):
     
     def update_coefficient(self,i,hz,v):
         self.coefficients[i]=self.slider2coef(v)
-        self.calculate_filter()
         self.set_filter()
     def calculate_filter(self):
         interpolate(self.filter,zip(self.filter_frequencies,self.coefficients))
     def set_filter(self):
-        self.sink_props.Set(self.sink_iface,'FilterCoefficients',self.filter)
+        self.sink.SeedFilter(self.filter_frequencies,self.coefficients)
     def get_eq_attr(self,attr):
         return self.sink_props.Get(self.sink_iface,attr)
     def set_connection(self):
         self.connection=connect()
         sink=self.connection.get_object(object_path='/org/pulseaudio/core1/sink1')
         self.sink_props=dbus.Interface(sink,dbus_interface='org.freedesktop.DBus.Properties')
+        self.sink=dbus.Interface(sink,dbus_interface='org.PulseAudio.Ext.Equalizing1.Equalizer')
         self.sample_rate=self.get_eq_attr('SampleRate')
         self.filter_rate=self.get_eq_attr('FilterSampleRate')
     def read_filter(self):
-        self.filter=self.get_eq_attr('FilterCoefficients')
+        #self.filter=self.get_eq_attr('FilterCoefficients')
+        self.coefficients=self.sink.FilterAtPoints(self.filter_frequencies)
         for i,hz in enumerate(self.filter_frequencies):
-            self.coefficients[i]=self.filter[hz]
             self.slider[i].blockSignals(True)
             self.slider[i].setValue(self.coef2slider(self.coefficients[i]))
             self.slider[i].blockSignals(False)
@@ -127,7 +127,7 @@ class QPaeq(QtGui.QWidget):
             self.coefficients[i]=1
             slider.setValue(self.coef2slider(self.coefficients[i]))
             slider.blockSignals(False)
-        self.calculate_filter()
+        #self.calculate_filter()
         self.set_filter()
         
 def main():
