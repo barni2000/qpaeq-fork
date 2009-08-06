@@ -47,25 +47,51 @@ def interpolate(values,points):
 class QPaeq(QtGui.QWidget):
     DEFAULT_FREQUENCIES=map(float,[50,100,200,300,400,500,800,1e3,1.5e3,3e3,5e3,7e3,10e3,15e3,20e3])
     sink_iface='org.PulseAudio.Ext.Equalizing1.Equalizer'
+    manager_iface='org.PulseAudio.Ext.Equalizing1.Manager'
     def __init__(self):
         QtGui.QWidget.__init__(self)
         self.setWindowTitle('qpaeq')
         self.orientation=QtCore.Qt.Vertical
         self.set_connection()
+        self.set_managed_info()
+        self.sink_name=self.sinks[0]
+        self.set_sink_info()
+
         self.set_frequencies_values(self.DEFAULT_FREQUENCIES)
         self.coefficients=[0.0]*len(self.filter_frequencies)
-        self.reset_button=QtGui.QPushButton('Reset')
-        self.reset_button.clicked.connect(self.reset)
-        layout=self.create_slider_layout()
-        layout.addWidget(self.reset_button)
-        self.setLayout(layout)
+        slider_layout=self.create_slider_layout()
+        layout=QtGui.QVBoxLayout(self)
+        
+        top_layout=QtGui.QHBoxLayout()
+        self.profile_box = QtGui.QComboBox()
+        self.sink_box = QtGui.QComboBox()
+        sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Preferred, QtGui.QSizePolicy.Fixed)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.profile_box.sizePolicy().hasHeightForWidth())
+        self.profile_box.setSizePolicy(sizePolicy)
+        self.sink_box.setSizePolicy(sizePolicy)
+        top_layout.addWidget(self.sink_box)
+        top_layout.addWidget(QtGui.QLabel('Profile'))
+        top_layout.addWidget(self.profile_box)
+        reset_button = QtGui.QPushButton('Reset')
+        reset_button.clicked.connect(self.reset)
+        top_layout.addStretch()
+        top_layout.addWidget(reset_button)
+
+        layout.addLayout(top_layout)
+        layout.addLayout(slider_layout)
+        #self.setLayout(layout)
         self.read_filter()
+        self.update_profiles()
+        self.update_sinks()
 
     def set_frequencies_values(self,freqs):
-        self.frequencies=[0]+freqs+[self.sample_rate//2+1]
-        self.filter_frequencies=[0]+ \
-                map(lambda x: int(round(x)),translate_rates(self.filter_rate,self.sample_rate,freqs)) \
-                +[self.filter_rate//2]
+        self.frequencies=[0]+freqs+[self.sample_rate//2]
+        self.filter_frequencies=map(lambda x: int(round(x)), \
+                translate_rates(self.filter_rate,self.sample_rate,
+                    self.frequencies) \
+                )
 
     def create_slider_layout(self):
         main_layout=QtGui.QHBoxLayout()
@@ -109,7 +135,22 @@ class QPaeq(QtGui.QWidget):
         return self.sink_props.Get(self.sink_iface,attr)
     def set_connection(self):
         self.connection=connect()
-        sink=self.connection.get_object(object_path='/org/pulseaudio/core1/sink1')
+    def set_managed_info(self):
+        manager_obj=self.connection.get_object(object_path='/org/pulseaudio/equalizing1')
+        manager_props=dbus.Interface(manager_obj,dbus_interface='org.freedesktop.DBus.Properties')
+        self.profiles=manager_props.Get(self.manager_iface,'Profiles')
+        #print self.profiles
+        self.sinks=manager_props.Get(self.manager_iface,'EqualizedSinks')
+        
+    def update_profiles(self):
+        self.profile_box.clear()
+        self.profile_box.addItems(self.profiles)
+    def update_sinks(self):
+        self.sink_box.clear()
+        self.sink_box.addItems(self.sinks)
+    def set_sink_info(self):
+        self.sink_name='/org/pulseaudio/core1/sink1'
+        sink=self.connection.get_object(object_path=self.sink_name)
         self.sink_props=dbus.Interface(sink,dbus_interface='org.freedesktop.DBus.Properties')
         self.sink=dbus.Interface(sink,dbus_interface='org.PulseAudio.Ext.Equalizing1.Equalizer')
         self.sample_rate=self.get_eq_attr('SampleRate')
