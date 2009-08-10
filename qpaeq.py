@@ -109,12 +109,14 @@ class QPaeq(QtGui.QWidget):
     def set_manager_dbus_sig_handlers(self):
         manager=dbus.Interface(self.manager_obj,dbus_interface=self.manager_iface)
         #self._get_core().ListenForSignal(self.manager_iface,[])
+        #self._get_core().ListenForSignal(self.manager_iface,[dbus.ObjectPath(self.manager_path)])
         manager.connect_to_signal('ProfilesChanged',self.update_profiles)
         manager.connect_to_signal('SinkAdded',self.sink_added)
         manager.connect_to_signal('SinkRemoved',self.sink_removed)
     def set_sink_dbus_sig_handlers(self):
         self._get_core().ListenForSignal('',[dbus.ObjectPath(self.sink_name),dbus.ObjectPath(self.manager_path)])
         #self._get_core().ListenForSignal(self.sink_iface,[])
+        #self._get_core().ListenForSignal(self.sink_iface,[dbus.ObjectPath(self.sink_name)])
         self.sink.connect_to_signal('FilterChanged',self.read_filter)
     def sink_added(self,sink):
         self.sinks.append(sink)
