@@ -39,6 +39,8 @@ class QPaeq(QtGui.QWidget):
     manager_path='/org/pulseaudio/equalizing1' 
     manager_iface='org.PulseAudio.Ext.Equalizing1.Manager'
     prop_iface='org.freedesktop.DBus.Properties'
+    core_iface='org.PulseAudio.Core1'
+    core_path='/org/pulseaudio/core1'
     def __init__(self):
         QtGui.QWidget.__init__(self)
         self.setWindowTitle('qpaeq')
@@ -50,8 +52,7 @@ class QPaeq(QtGui.QWidget):
 
         self.set_frequencies_values(self.DEFAULT_FREQUENCIES)
         self.coefficients=[0.0]*len(self.filter_frequencies)
-        slider_layout=self.create_slider_layout()
-        layout=QtGui.QVBoxLayout(self)
+        self.layout=QtGui.QVBoxLayout(self)
         
         toprow_layout=QtGui.QHBoxLayout()
         self.profile_box = QtGui.QComboBox()
@@ -87,21 +88,33 @@ class QPaeq(QtGui.QWidget):
         reset_button.clicked.connect(self.reset)
         toprow_layout.addStretch()
         toprow_layout.addWidget(reset_button)
-
-        layout.addLayout(toprow_layout)
-        layout.addLayout(slider_layout)
-        #self.setLayout(layout)
-        self.read_filter()
+        self.layout.addLayout(toprow_layout)
+        self.slider_layout=None
+        self.set_main_layout()
         self.update_profiles()
         self.update_sinks()
         self.set_manager_dbus_sig_handlers()
         self.set_sink_dbus_sig_handlers()
+        
+    def set_main_layout(self):
+        if self.slider_layout is not None:
+            self.layout.remove(self.slider_layout)
+        self.slider_layout=self.create_slider_layout()
+        self.layout.addLayout(self.slider_layout)
+        self.read_filter()
+    def _get_core(self):
+        core_obj=self.connection.get_object(object_path=self.core_path)
+        core=dbus.Interface(core_obj,dbus_interface=self.core_iface)
+        return core
     def set_manager_dbus_sig_handlers(self):
         manager=dbus.Interface(self.manager_obj,dbus_interface=self.manager_iface)
-        manager.connect_to_signal(None,self.update_profiles)
+        #self._get_core().ListenForSignal(self.manager_iface,[])
+        manager.connect_to_signal('ProfilesChanged',self.update_profiles)
         manager.connect_to_signal('SinkAdded',self.sink_added)
         manager.connect_to_signal('SinkRemoved',self.sink_removed)
     def set_sink_dbus_sig_handlers(self):
+        self._get_core().ListenForSignal('',[dbus.ObjectPath(self.sink_name),dbus.ObjectPath(self.manager_path)])
+        #self._get_core().ListenForSignal(self.sink_iface,[])
         self.sink.connect_to_signal('FilterChanged',self.read_filter)
     def sink_added(self,sink):
         self.sinks.append(sink)
@@ -111,7 +124,6 @@ class QPaeq(QtGui.QWidget):
             #connect to new sink?
             pass
         self.update_sinks()
-        
     def save_profile(self):
         #popup dialog box for name
         current=self.profile_box.currentIndex()
