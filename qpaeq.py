@@ -110,19 +110,19 @@ class QPaeq(QtGui.QWidget):
         manager=dbus.Interface(self.manager_obj,dbus_interface=self.manager_iface)
         #self._get_core().ListenForSignal(self.manager_iface,[])
         #self._get_core().ListenForSignal(self.manager_iface,[dbus.ObjectPath(self.manager_path)])
-        core=self._get_core()
-        for x in ['ProfilesChanged','SinkAdded','SinkRemoved']:
-            core.ListenForSignal("%s.%s" %(self.manager_iface,x),[dbus.ObjectPath(self.manager_path)])
+        #core=self._get_core()
+        #for x in ['ProfilesChanged','SinkAdded','SinkRemoved']:
+        #    core.ListenForSignal("%s.%s" %(self.manager_iface,x),[dbus.ObjectPath(self.manager_path)])
         manager.connect_to_signal('ProfilesChanged',self.update_profiles)
         manager.connect_to_signal('SinkAdded',self.sink_added)
         manager.connect_to_signal('SinkRemoved',self.sink_removed)
     def set_sink_dbus_sig_handlers(self):
-        #self._get_core().ListenForSignal('',[dbus.ObjectPath(self.sink_name),dbus.ObjectPath(self.manager_path)])
         core=self._get_core()
-        for x in ['FilterChanged']:
-            core.ListenForSignal("%s.%s" %(self.sink_iface,x),[dbus.ObjectPath(self.sink_name)])
-        #self._get_core().ListenForSignal(self.sink_iface,[dbus.ObjectPath(self.sink_name)])
-        #self._get_core().ListenForSignal(self.sink_iface,[dbus.ObjectPath(self.sink_name)])
+        #temporary hack until signal filtering works properly
+        core.ListenForSignal('',[dbus.ObjectPath(self.sink_name),dbus.ObjectPath(self.manager_path)])
+        #for x in ['FilterChanged']:
+        #    core.ListenForSignal("%s.%s" %(self.sink_iface,x),[dbus.ObjectPath(self.sink_name)])
+        #core.ListenForSignal(self.sink_iface,[dbus.ObjectPath(self.sink_name)])
         self.sink.connect_to_signal('FilterChanged',self.read_filter)
     def sink_added(self,sink):
         self.sinks.append(sink)
@@ -169,10 +169,10 @@ class QPaeq(QtGui.QWidget):
         return main_layout
     @staticmethod
     def slider2coef(x):
-        return 1.0+(x/1000.0)
+        return (1.0+(x/1000.0))/math.sqrt(2.0)
     @staticmethod
     def coef2slider(x):
-        return int((x-1)*1000)
+        return int((x*math.sqrt(2.0)-1.0)*1000)
     def create_slider(self,changed_cb,index,hz):
         if hz==0:
             label_text='DC'
@@ -236,7 +236,7 @@ class QPaeq(QtGui.QWidget):
     def reset(self):
         for i,slider in enumerate(self.slider):
             slider.blockSignals(True)
-            self.coefficients[i]=1
+            self.coefficients[i]=1/math.sqrt(2.0)
             slider.setValue(self.coef2slider(self.coefficients[i]))
             slider.blockSignals(False)
         self.set_filter()
