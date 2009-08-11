@@ -34,7 +34,7 @@ def hz2str(hz):
 #TODO: reconnect support loop 1 second trying to reconnect
 #TODO: just resample the filters for profiles when loading to different sizes
 class QPaeq(QtGui.QWidget):
-    DEFAULT_FREQUENCIES=map(float,[50,100,200,300,400,500,800,1e3,1.5e3,3e3,5e3,7e3,10e3,15e3,20e3])
+    DEFAULT_FREQUENCIES=map(float,[25,50,75,100,150,200,300,400,500,800,1e3,1.5e3,3e3,5e3,7e3,10e3,15e3,20e3])
     sink_iface='org.PulseAudio.Ext.Equalizing1.Equalizer'
     manager_path='/org/pulseaudio/equalizing1' 
     manager_iface='org.PulseAudio.Ext.Equalizing1.Manager'
@@ -63,6 +63,7 @@ class QPaeq(QtGui.QWidget):
         sizePolicy.setHeightForWidth(self.profile_box.sizePolicy().hasHeightForWidth())
         self.profile_box.setSizePolicy(sizePolicy)
         self.profile_box.setDuplicatesEnabled(False)
+        self.profile_box.activated.connect(self.load_profile)
         self.sink_box.setSizePolicy(sizePolicy)
         self.sink_box.setDuplicatesEnabled(False)
         toprow_layout.addWidget(QtGui.QLabel('Sink'))
@@ -153,6 +154,10 @@ class QPaeq(QtGui.QWidget):
         profile=self.profile_box.currentText()
         manager=dbus.Interface(self.manager_obj,dbus_interface=self.manager_iface)
         manager.RemoveProfile(dbus.String(profile))
+    def load_profile(self,x):
+        profile=self.profile_box.itemText(x)
+        self.sink.LoadProfile(dbus.String(profile))
+        
     def set_frequencies_values(self,freqs):
         self.frequencies=freqs+[self.sample_rate//2]
         self.filter_frequencies=map(lambda x: int(round(x)), \
@@ -216,11 +221,15 @@ class QPaeq(QtGui.QWidget):
         print 'update profiles called!'
         manager_props=dbus.Interface(self.manager_obj,dbus_interface=self.prop_iface)
         self.profiles=manager_props.Get(self.manager_iface,'Profiles')
+        self.profile_box.blockSignals(True)
         self.profile_box.clear()
         self.profile_box.addItems(self.profiles)
+        self.profile_box.blockSignals(False)
     def update_sinks(self):
+        self.sink_box.blockSignals(True)
         self.sink_box.clear()
         self.sink_box.addItems(self.sinks)
+        self.sink_box.blockSignals(False)
     def set_sink_info(self):
         sink=self.connection.get_object(object_path=self.sink_name)
         self.sink_props=dbus.Interface(sink,dbus_interface=self.prop_iface)
