@@ -33,6 +33,7 @@ def hz2str(hz):
 #TODO: add support for changing of window_size 1000-fft_size (adv option)
 #TODO: reconnect support loop 1 second trying to reconnect
 #TODO: just resample the filters for profiles when loading to different sizes
+#TODO: add preamp
 class QPaeq(QtGui.QWidget):
     DEFAULT_FREQUENCIES=map(float,[25,50,75,100,150,200,300,400,500,800,1e3,1.5e3,3e3,5e3,7e3,10e3,15e3,20e3])
     sink_iface='org.PulseAudio.Ext.Equalizing1.Equalizer'
