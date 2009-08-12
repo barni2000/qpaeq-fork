@@ -34,7 +34,8 @@ def hz2str(hz):
 #TODO: reconnect support loop 1 second trying to reconnect
 #TODO: just resample the filters for profiles when loading to different sizes
 class QPaeq(QtGui.QWidget):
-    DEFAULT_FREQUENCIES=map(float,[25,50,75,100,150,200,300,400,500,800,1e3,1.5e3,3e3,5e3,7e3,10e3,15e3,20e3])
+    #DEFAULT_FREQUENCIES=map(float,[25,50,75,100,150,200,300,400,500,800,1e3,1.5e3,3e3,5e3,7e3,10e3,15e3,20e3])
+    DEFAULT_FREQUENCIES=[31.75,63.5,125,250,500,1e3,2e3,4e3,8e3,16e3]
     sink_iface='org.PulseAudio.Ext.Equalizing1.Equalizer'
     manager_path='/org/pulseaudio/equalizing1' 
     manager_iface='org.PulseAudio.Ext.Equalizing1.Manager'
@@ -68,7 +69,7 @@ class QPaeq(QtGui.QWidget):
         self.sink_box.setDuplicatesEnabled(False)
         toprow_layout.addWidget(QtGui.QLabel('Sink'))
         toprow_layout.addWidget(self.sink_box)
-        toprow_layout.addWidget(QtGui.QLabel('Profile'))
+        toprow_layout.addWidget(QtGui.QLabel('Preset'))
         toprow_layout.addWidget(self.profile_box)
         large_icon_size=self.style().pixelMetric(QtGui.QStyle.PM_LargeIconSize)
         large_icon_size=QtCore.QSize(large_icon_size,large_icon_size)
