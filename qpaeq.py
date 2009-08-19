@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import os,math,sys
 import PyQt4
 from PyQt4 import QtGui,QtCore
@@ -36,7 +37,7 @@ def hz2str(hz):
 #TODO: add preamp
 class QPaeq(QtGui.QWidget):
     #DEFAULT_FREQUENCIES=map(float,[25,50,75,100,150,200,300,400,500,800,1e3,1.5e3,3e3,5e3,7e3,10e3,15e3,20e3])
-    DEFAULT_FREQUENCIES=[31.75,63.5,125,250,500,1e3,2e3,4e3,8e3,16e3]
+    DEFAULT_FREQUENCIES=[0,31.75,63.5,125,250,500,1e3,2e3,4e3,8e3,16e3]
     sink_iface='org.PulseAudio.Ext.Equalizing1.Equalizer'
     manager_path='/org/pulseaudio/equalizing1' 
     manager_iface='org.PulseAudio.Ext.Equalizing1.Manager'
@@ -53,9 +54,9 @@ class QPaeq(QtGui.QWidget):
         self.set_sink_info()
 
         self.set_frequencies_values(self.DEFAULT_FREQUENCIES)
-        self.coefficients=[0.0]*len(self.filter_frequencies)
+        self.coefficients=[0.0]*(1+len(self.filter_frequencies))
         self.layout=QtGui.QVBoxLayout(self)
-        
+
         toprow_layout=QtGui.QHBoxLayout()
         self.profile_box = QtGui.QComboBox()
         self.sink_box = QtGui.QComboBox()
@@ -98,7 +99,7 @@ class QPaeq(QtGui.QWidget):
         self.update_sinks()
         self.set_manager_dbus_sig_handlers()
         self.set_sink_dbus_sig_handlers()
-        
+
     def set_main_layout(self):
         if self.slider_layout is not None:
             self.layout.remove(self.slider_layout)
@@ -159,7 +160,7 @@ class QPaeq(QtGui.QWidget):
     def load_profile(self,x):
         profile=self.profile_box.itemText(x)
         self.sink.LoadProfile(dbus.String(profile))
-        
+
     def set_frequencies_values(self,freqs):
         self.frequencies=freqs+[self.sample_rate//2]
         self.filter_frequencies=map(lambda x: int(round(x)), \
@@ -169,10 +170,20 @@ class QPaeq(QtGui.QWidget):
 
     def create_slider_layout(self):
         main_layout=QtGui.QHBoxLayout()
-        self.slider=[None]*len(self.frequencies)
+        self.slider=[None]*len(self.coefficients)
+        main_layout.addLayout(self.create_slider(partial(self.update_coefficient,0),
+            0,'Preamp')
+        )
         for i,hz in enumerate(self.frequencies):
-            cb=partial(self.update_coefficient,i,hz)
-            main_layout.addLayout(self.create_slider(cb,i,hz))
+            slider_i=i+1
+            if hz==0:
+                label_text='DC'
+            elif hz==self.sample_rate//2:
+                label_text='Coda'
+            else:
+                label_text=hz2str(hz)
+            cb=partial(self.update_coefficient,slider_i)
+            main_layout.addLayout(self.create_slider(cb,slider_i,label_text))
         return main_layout
     @staticmethod
     def slider2coef(x):
@@ -180,14 +191,8 @@ class QPaeq(QtGui.QWidget):
     @staticmethod
     def coef2slider(x):
         return int((x*math.sqrt(2.0)-1.0)*1000)
-    def create_slider(self,changed_cb,index,hz):
-        if hz==0:
-            label_text='DC'
-        elif hz==self.sample_rate//2:
-            label_text='Coda'
-        else:
-            label_text=hz2str(hz)
-        class HzLabel(QtGui.QLabel):
+    def create_slider(self,changed_cb,index,label):
+        class SliderLabel(QtGui.QLabel):
             def __init__(self,slider,label,parent=None):
                 QtGui.QLabel.__init__(self,label, parent)
                 self.slider=slider
@@ -198,19 +203,20 @@ class QPaeq(QtGui.QWidget):
         slider.setRange(-1000,2000)
         slider.setSingleStep(1)
         slider.valueChanged.connect(changed_cb)
-        slider_label=HzLabel(slider,label_text)
+        slider_label=SliderLabel(slider,label)
         slider_layout.addWidget(slider)
         slider_layout.addWidget(slider_label)
         self.slider[index]=slider
         return slider_layout
-    
-    def update_coefficient(self,i,hz,v):
+
+    def update_coefficient(self,i,v):
         self.coefficients[i]=self.slider2coef(v)
         self.set_filter()
     def set_filter(self):
-        freqs=[0]+self.filter_frequencies
-        coefs=[1.0]+self.coefficients
-        self.sink.SeedFilter(freqs,coefs)
+        freqs=self.filter_frequencies
+        coefs=self.coefficients[1:]
+        preamp=self.coefficients[0]
+        self.sink.SeedFilter(freqs,coefs,preamp)
     def get_eq_attr(self,attr):
         return self.sink_props.Get(self.sink_iface,attr)
     def set_connection(self):
@@ -220,7 +226,7 @@ class QPaeq(QtGui.QWidget):
         manager_props=dbus.Interface(self.manager_obj,dbus_interface=self.prop_iface)
         self.sinks=manager_props.Get(self.manager_iface,'EqualizedSinks')
     def update_profiles(self):
-        print 'update profiles called!'
+        #print 'update profiles called!'
         manager_props=dbus.Interface(self.manager_obj,dbus_interface=self.prop_iface)
         self.profiles=manager_props.Get(self.manager_iface,'Profiles')
         self.profile_box.blockSignals(True)
@@ -239,10 +245,12 @@ class QPaeq(QtGui.QWidget):
         self.sample_rate=self.get_eq_attr('SampleRate')
         self.filter_rate=self.get_eq_attr('FilterSampleRate')
     def read_filter(self):
-        self.coefficients=self.sink.FilterAtPoints(self.filter_frequencies)
-        for i,hz in enumerate(self.filter_frequencies):
+        coefs,preamp=self.sink.FilterAtPoints(self.filter_frequencies)
+        self.coefficients=[preamp]+coefs
+        #print self.coefficients
+        for i,v in enumerate(self.coefficients):
             self.slider[i].blockSignals(True)
-            self.slider[i].setValue(self.coef2slider(self.coefficients[i]))
+            self.slider[i].setValue(self.coef2slider(v))
             self.slider[i].blockSignals(False)
     def reset(self):
         for i,slider in enumerate(self.slider):
@@ -251,7 +259,7 @@ class QPaeq(QtGui.QWidget):
             slider.setValue(self.coef2slider(self.coefficients[i]))
             slider.blockSignals(False)
         self.set_filter()
-        
+
 def main():
     dbus.mainloop.qt.DBusQtMainLoop(set_as_default=True)
     app=QtGui.QApplication(sys.argv)
