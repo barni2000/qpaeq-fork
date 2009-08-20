@@ -164,6 +164,9 @@ class QPaeq(QtGui.QWidget):
             if ret!=mbox.Save:
                 return
         self.sink.SaveProfile(self.channel,dbus.String(profile))
+        if channel==self.channels:
+            self.load_profile(self.channel)
+        else:
     def remove_profile(self):
         #find active profile name, remove it
         profile=self.profile_box.currentText()
@@ -172,6 +175,8 @@ class QPaeq(QtGui.QWidget):
     def load_profile(self,x):
         profile=self.profile_box.itemText(x)
         self.sink.LoadProfile(self.channel,dbus.String(profile))
+        if self.channel==self.channels:
+        else:
     def select_channel(self,x):
         self.channel = self.channel_box.itemData(x).toPyObject()
         self.read_filter()
@@ -201,10 +206,10 @@ class QPaeq(QtGui.QWidget):
         return main_layout
     @staticmethod
     def slider2coef(x):
-        return (1.0+(x/1000.0))/math.sqrt(2.0)
+        return (1.0+(x/1000.0))
     @staticmethod
     def coef2slider(x):
-        return int((x*math.sqrt(2.0)-1.0)*1000)
+        return int((x-1.0)*1000)
     def create_slider(self,changed_cb,index,label):
         class SliderLabel(QtGui.QLabel):
             def __init__(self,slider,label,parent=None):
@@ -224,7 +229,10 @@ class QPaeq(QtGui.QWidget):
         return slider_layout
 
     def update_coefficient(self,i,v):
-        self.coefficients[i]=self.slider2coef(v)
+        if i==0:
+            self.coefficients[i]=self.slider2coef(v)
+        else:
+            self.coefficients[i]=self.slider2coef(v)/math.sqrt(2.0)
         self.set_filter()
     def set_filter(self):
         freqs=self.filter_frequencies
@@ -266,6 +274,8 @@ class QPaeq(QtGui.QWidget):
         #print self.coefficients
         for i,v in enumerate(self.coefficients):
             self.slider[i].blockSignals(True)
+            if i>0:
+                v=v*math.sqrt(2.0)
             self.slider[i].setValue(self.coef2slider(v))
             self.slider[i].blockSignals(False)
     def reset(self):
