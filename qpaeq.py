@@ -7,6 +7,9 @@ from functools import partial
 import dbus.mainloop.qt
 import dbus
 
+import signal
+signal.signal(signal.SIGINT, signal.SIG_DFL)
+
 
 CORE_PATH = "/org/pulseaudio/core1"
 CORE_IFACE = "org.PulseAudio.Core1"
@@ -60,6 +63,7 @@ class QPaeq(QtGui.QWidget):
         toprow_layout=QtGui.QHBoxLayout()
         self.profile_box = QtGui.QComboBox()
         self.sink_box = QtGui.QComboBox()
+        self.channel_box = QtGui.QComboBox()
         sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Preferred, QtGui.QSizePolicy.Fixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
@@ -69,10 +73,18 @@ class QPaeq(QtGui.QWidget):
         self.profile_box.activated.connect(self.load_profile)
         self.sink_box.setSizePolicy(sizePolicy)
         self.sink_box.setDuplicatesEnabled(False)
+        self.channel_box.setSizePolicy(sizePolicy)
         toprow_layout.addWidget(QtGui.QLabel('Sink'))
         toprow_layout.addWidget(self.sink_box)
+        toprow_layout.addWidget(QtGui.QLabel('Channel'))
+        toprow_layout.addWidget(self.channel_box)
+        self.channel_box.addItem('All',self.channels)
+        for i in xrange(self.channels):
+            self.channel_box.addItem('%d' %(i+1,),i)
+        self.channel_box.activated.connect(self.select_channel)
         toprow_layout.addWidget(QtGui.QLabel('Preset'))
         toprow_layout.addWidget(self.profile_box)
+
         large_icon_size=self.style().pixelMetric(QtGui.QStyle.PM_LargeIconSize)
         large_icon_size=QtCore.QSize(large_icon_size,large_icon_size)
         save_profile=QtGui.QToolButton()
@@ -151,7 +163,7 @@ class QPaeq(QtGui.QWidget):
             ret=mbox.exec_()
             if ret!=mbox.Save:
                 return
-        self.sink.SaveProfile(dbus.String(profile))
+        self.sink.SaveProfile(self.channel,dbus.String(profile))
     def remove_profile(self):
         #find active profile name, remove it
         profile=self.profile_box.currentText()
@@ -159,8 +171,10 @@ class QPaeq(QtGui.QWidget):
         manager.RemoveProfile(dbus.String(profile))
     def load_profile(self,x):
         profile=self.profile_box.itemText(x)
-        self.sink.LoadProfile(dbus.String(profile))
-
+        self.sink.LoadProfile(self.channel,dbus.String(profile))
+    def select_channel(self,x):
+        self.channel = self.channel_box.itemData(x).toPyObject()
+        self.read_filter()
     def set_frequencies_values(self,freqs):
         self.frequencies=freqs+[self.sample_rate//2]
         self.filter_frequencies=map(lambda x: int(round(x)), \
@@ -216,7 +230,7 @@ class QPaeq(QtGui.QWidget):
         freqs=self.filter_frequencies
         coefs=self.coefficients[1:]
         preamp=self.coefficients[0]
-        self.sink.SeedFilter(freqs,coefs,preamp)
+        self.sink.SeedFilter(self.channel,freqs,coefs,preamp)
     def get_eq_attr(self,attr):
         return self.sink_props.Get(self.sink_iface,attr)
     def set_connection(self):
@@ -244,8 +258,10 @@ class QPaeq(QtGui.QWidget):
         self.sink=dbus.Interface(sink,dbus_interface=self.sink_iface)
         self.sample_rate=self.get_eq_attr('SampleRate')
         self.filter_rate=self.get_eq_attr('FilterSampleRate')
+        self.channels=self.get_eq_attr('NChannels')
+        self.channel=self.channels
     def read_filter(self):
-        coefs,preamp=self.sink.FilterAtPoints(self.filter_frequencies)
+        coefs,preamp=self.sink.FilterAtPoints(self.channel,self.filter_frequencies)
         self.coefficients=[preamp]+coefs
         #print self.coefficients
         for i,v in enumerate(self.coefficients):
@@ -253,12 +269,10 @@ class QPaeq(QtGui.QWidget):
             self.slider[i].setValue(self.coef2slider(v))
             self.slider[i].blockSignals(False)
     def reset(self):
-        for i,slider in enumerate(self.slider):
-            slider.blockSignals(True)
-            self.coefficients[i]=1/math.sqrt(2.0)
-            slider.setValue(self.coef2slider(self.coefficients[i]))
-            slider.blockSignals(False)
-        self.set_filter()
+        coefs=dbus.Array([1/math.sqrt(2.0)]*(self.filter_rate//2+1))
+        channel = int(self.channel)
+        self.sink.SetFilter(self.channel,coefs,1.0)
+        self.read_filter()
 
 def main():
     dbus.mainloop.qt.DBusQtMainLoop(set_as_default=True)
