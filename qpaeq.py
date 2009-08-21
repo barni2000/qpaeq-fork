@@ -166,7 +166,7 @@ class QPaeq(QtGui.QWidget):
         self.sink.SaveProfile(self.channel,dbus.String(profile))
         if channel==self.channels:
             self.load_profile(self.channel)
-        else:
+
     def remove_profile(self):
         #find active profile name, remove it
         profile=self.profile_box.currentText()
@@ -175,11 +175,11 @@ class QPaeq(QtGui.QWidget):
     def load_profile(self,x):
         profile=self.profile_box.itemText(x)
         self.sink.LoadProfile(self.channel,dbus.String(profile))
-        if self.channel==self.channels:
-        else:
     def select_channel(self,x):
         self.channel = self.channel_box.itemData(x).toPyObject()
         self.read_filter()
+        self._set_profile_name()
+
     def set_frequencies_values(self,freqs):
         self.frequencies=freqs+[self.sample_rate//2]
         self.filter_frequencies=map(lambda x: int(round(x)), \
@@ -255,6 +255,7 @@ class QPaeq(QtGui.QWidget):
         self.profile_box.clear()
         self.profile_box.addItems(self.profiles)
         self.profile_box.blockSignals(False)
+        self._set_profile_name()
     def update_sinks(self):
         self.sink_box.blockSignals(True)
         self.sink_box.clear()
@@ -283,7 +284,14 @@ class QPaeq(QtGui.QWidget):
         channel = int(self.channel)
         self.sink.SetFilter(self.channel,coefs,1.0)
         self.read_filter()
-
+    def _set_profile_name(self):
+        self.profile_box.blockSignals(True)
+        profile_name=self.sink.BaseProfile(self.channel)
+        if profile_name is not None:
+            i=self.profile_box.findText(profile_name)
+            if i>=0:
+                self.profile_box.setCurrentIndex(i)
+        self.profile_box.blockSignals(False)
 def main():
     dbus.mainloop.qt.DBusQtMainLoop(set_as_default=True)
     app=QtGui.QApplication(sys.argv)
