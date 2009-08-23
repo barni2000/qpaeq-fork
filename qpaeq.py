@@ -244,10 +244,8 @@ class QPaeq(QtGui.QWidget):
         #print self.filter_frequencies
         self.filter_state.readback()
     def reset(self):
-        self.filter_state.coefficients=[1/math.sqrt(2.0)]*(self.filter_rate//2+1)
-        coefs=dbus.Array([1/math.sqrt(2.0)]*(self.filter_rate//2+1))
-        self.filter_state.channel = int(self.channel)
-        self.sink.SetFilter(self.channel,dbus.Array(coefs),1.0)
+        coefs=dbus.Array([1/math.sqrt(2.0)]*(self.filter_state.filter_rate//2+1))
+        self.filter_state.set_filter(coefs)
     def _set_profile_name(self):
         self.profile_box.blockSignals(True)
         profile_name=self.sink.BaseProfile(self.filter_state.channel)
@@ -286,7 +284,11 @@ class SliderArray(QtGui.QWidget):
             t.timeout.connect(partial(self.add_sliders_to_fit,event))
             t.start()
     def add_sliders_to_fit(self,event):
-        i=len(self.filter_state.frequencies)
+        if event.oldSize().width()>0 and event.size().width()>0:
+            i=len(self.filter_state.frequencies)*event.size().width()/event.oldSize().width()
+        else:
+            i=len(self.filter_state.frequencies)
+
         t_w=self.size().width()
         def evaluate(filter_state, target, variable):
             base_freqs=self.filter_state.freq_proper(self.filter_state.DEFAULT_FREQUENCIES)
@@ -422,12 +424,14 @@ class FilterState(QtCore.QObject):
         return list(map(lambda x: x*dst/src,rates))
     def seed(self):
         self.sink.SeedFilter(self.channel,self.filter_frequencies,self.coefficients,self.preamp)
-
     def readback(self):
         coefs,preamp=self.sink.FilterAtPoints(self.channel,self.filter_frequencies)
         self.coefficients=coefs
         self.preamp=preamp
         self.readFilter.emit()
+    def set_filter(self,coefs):
+        self.sink.SetFilter(self.channel,dbus.Array(coefs),self.preamp)
+
 
 def safe_log(k,b):
     i=0
