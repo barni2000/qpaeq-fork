@@ -1,6 +1,23 @@
 #!/usr/bin/env python
+#    qpaeq is a equalizer interface for pulseaudio's equalizer sinks
+#    Copyright (C) 2009  Jason Newton <nevion@gmail.com
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU Affero General Public License as
+#    published by the Free Software Foundation, either version 3 of the
+#    License, or (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU Affero General Public License for more details.
+#
+#    You should have received a copy of the GNU Affero General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+
 import os,math,sys
-import PyQt4
+import PyQt4,sip
 from PyQt4 import QtGui,QtCore
 from functools import partial
 
@@ -23,66 +40,57 @@ def connect():
     return dbus.connection.Connection(address)
 
 
-def translate_rates(dst,src,rates):
-    return list(map(lambda x: x*dst/src,rates))
-
-def hz2str(hz):
-    p=math.floor(math.log(hz,10.0))
-    if p<3:
-        return '%dHz' %(hz,)
-    elif p>=3:
-        return '%.1fKHz' %(hz/(10.0**3),)
 #TODO: signals: sink Filter changed, sink reconfigured (window size) (sink iface)
 #TODO: manager signals: new sink, removed sink, new profile, removed profile
 #TODO: add support for changing of window_size 1000-fft_size (adv option)
 #TODO: reconnect support loop 1 second trying to reconnect
 #TODO: just resample the filters for profiles when loading to different sizes
 #TODO: add preamp
+prop_iface='org.freedesktop.DBus.Properties'
+eq_iface='org.PulseAudio.Ext.Equalizing1.Equalizer'
+device_iface='org.PulseAudio.Core1.Device'
 class QPaeq(QtGui.QWidget):
-    #DEFAULT_FREQUENCIES=map(float,[25,50,75,100,150,200,300,400,500,800,1e3,1.5e3,3e3,5e3,7e3,10e3,15e3,20e3])
-    DEFAULT_FREQUENCIES=[0,31.75,63.5,125,250,500,1e3,2e3,4e3,8e3,16e3]
-    sink_iface='org.PulseAudio.Ext.Equalizing1.Equalizer'
-    manager_path='/org/pulseaudio/equalizing1' 
+    manager_path='/org/pulseaudio/equalizing1'
     manager_iface='org.PulseAudio.Ext.Equalizing1.Manager'
-    prop_iface='org.freedesktop.DBus.Properties'
     core_iface='org.PulseAudio.Core1'
     core_path='/org/pulseaudio/core1'
     def __init__(self):
         QtGui.QWidget.__init__(self)
         self.setWindowTitle('qpaeq')
-        self.orientation=QtCore.Qt.Vertical
+        self.slider_widget=None
+        self.sink_name=None
+
+        self.create_layout()
+
         self.set_connection()
-        self.set_managed_info()
-        self.sink_name=self.sinks[0]
-        self.set_sink_info()
+        self.connect_to_sink(self.sinks[0])
+        self.set_callbacks()
+        self.setMinimumSize(self.sizeHint())
 
-        self.set_frequencies_values(self.DEFAULT_FREQUENCIES)
-        self.coefficients=[0.0]*(1+len(self.filter_frequencies))
-        self.layout=QtGui.QVBoxLayout(self)
-
+    def create_layout(self):
+        self.main_layout=QtGui.QVBoxLayout()
+        self.setLayout(self.main_layout)
         toprow_layout=QtGui.QHBoxLayout()
-        self.profile_box = QtGui.QComboBox()
-        self.sink_box = QtGui.QComboBox()
-        self.channel_box = QtGui.QComboBox()
         sizePolicy = QtGui.QSizePolicy(QtGui.QSizePolicy.Preferred, QtGui.QSizePolicy.Fixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.profile_box.sizePolicy().hasHeightForWidth())
-        self.profile_box.setSizePolicy(sizePolicy)
-        self.profile_box.setDuplicatesEnabled(False)
-        self.profile_box.activated.connect(self.load_profile)
+        #sizePolicy.setHeightForWidth(self.profile_box.sizePolicy().hasHeightForWidth())
+
+        toprow_layout.addWidget(QtGui.QLabel('Sink'))
+        self.sink_box = QtGui.QComboBox()
         self.sink_box.setSizePolicy(sizePolicy)
         self.sink_box.setDuplicatesEnabled(False)
-        self.channel_box.setSizePolicy(sizePolicy)
-        toprow_layout.addWidget(QtGui.QLabel('Sink'))
         toprow_layout.addWidget(self.sink_box)
+
         toprow_layout.addWidget(QtGui.QLabel('Channel'))
+        self.channel_box = QtGui.QComboBox()
+        self.channel_box.setSizePolicy(sizePolicy)
         toprow_layout.addWidget(self.channel_box)
-        self.channel_box.addItem('All',self.channels)
-        for i in xrange(self.channels):
-            self.channel_box.addItem('%d' %(i+1,),i)
-        self.channel_box.activated.connect(self.select_channel)
+
         toprow_layout.addWidget(QtGui.QLabel('Preset'))
+        self.profile_box = QtGui.QComboBox()
+        self.profile_box.setSizePolicy(sizePolicy)
+        self.profile_box.setDuplicatesEnabled(False)
         toprow_layout.addWidget(self.profile_box)
 
         large_icon_size=self.style().pixelMetric(QtGui.QStyle.PM_LargeIconSize)
@@ -104,46 +112,57 @@ class QPaeq(QtGui.QWidget):
         reset_button.clicked.connect(self.reset)
         toprow_layout.addStretch()
         toprow_layout.addWidget(reset_button)
-        self.layout.addLayout(toprow_layout)
-        self.slider_layout=None
-        self.set_main_layout()
-        self.update_profiles()
-        self.update_sinks()
-        self.set_manager_dbus_sig_handlers()
-        self.set_sink_dbus_sig_handlers()
+        self.layout().addLayout(toprow_layout)
 
-    def set_main_layout(self):
-        if self.slider_layout is not None:
-            self.layout.remove(self.slider_layout)
-        self.slider_layout=self.create_slider_layout()
-        self.layout.addLayout(self.slider_layout)
+        self.profile_box.activated.connect(self.load_profile)
+        self.channel_box.activated.connect(self.select_channel)
+
+    def connect_to_sink(self,name):
+        #TODO: clear slots for profile buttons
+        sink=self.connection.get_object(object_path=name)
+        self.sink_props=dbus.Interface(sink,dbus_interface=prop_iface)
+        self.sink=dbus.Interface(sink,dbus_interface=eq_iface)
+        self.filter_state=FilterState(sink)
+        #sample_rate,filter_rate,channels,channel)
+
+        self.channel_box.clear()
+        self.channel_box.addItem('All',self.filter_state.channels)
+        for i in xrange(self.filter_state.channels):
+            self.channel_box.addItem('%d' %(i+1,),i)
+        self.setMinimumSize(self.sizeHint())
+
+        self.set_slider_widget(SliderArray(self.filter_state))
+
+        self.sink_name=name
+        #set the signal listener for this sink
+        core=self._get_core()
+        #temporary hack until signal filtering works properly
+        core.ListenForSignal('',[dbus.ObjectPath(self.sink_name),dbus.ObjectPath(self.manager_path)])
+        #for x in ['FilterChanged']:
+        #    core.ListenForSignal("%s.%s" %(self.eq_iface,x),[dbus.ObjectPath(self.sink_name)])
+        #core.ListenForSignal(self.eq_iface,[dbus.ObjectPath(self.sink_name)])
+        self.sink.connect_to_signal('FilterChanged',self.read_filter)
+
+    def set_slider_widget(self,widget):
+        layout=self.layout()
+        if self.slider_widget is not None:
+            i=layout.indexOf(self.slider_widget)
+            layout.removeWidget(self.slider_widget)
+            self.slider_widget.deleteLater()
+            layout.insertWidget(i,self.slider_widget)
+        else:
+            layout.addWidget(widget)
+        self.slider_widget=widget
         self.read_filter()
     def _get_core(self):
         core_obj=self.connection.get_object(object_path=self.core_path)
         core=dbus.Interface(core_obj,dbus_interface=self.core_iface)
         return core
-    def set_manager_dbus_sig_handlers(self):
-        manager=dbus.Interface(self.manager_obj,dbus_interface=self.manager_iface)
-        #self._get_core().ListenForSignal(self.manager_iface,[])
-        #self._get_core().ListenForSignal(self.manager_iface,[dbus.ObjectPath(self.manager_path)])
-        #core=self._get_core()
-        #for x in ['ProfilesChanged','SinkAdded','SinkRemoved']:
-        #    core.ListenForSignal("%s.%s" %(self.manager_iface,x),[dbus.ObjectPath(self.manager_path)])
-        manager.connect_to_signal('ProfilesChanged',self.update_profiles)
-        manager.connect_to_signal('SinkAdded',self.sink_added)
-        manager.connect_to_signal('SinkRemoved',self.sink_removed)
-    def set_sink_dbus_sig_handlers(self):
-        core=self._get_core()
-        #temporary hack until signal filtering works properly
-        core.ListenForSignal('',[dbus.ObjectPath(self.sink_name),dbus.ObjectPath(self.manager_path)])
-        #for x in ['FilterChanged']:
-        #    core.ListenForSignal("%s.%s" %(self.sink_iface,x),[dbus.ObjectPath(self.sink_name)])
-        #core.ListenForSignal(self.sink_iface,[dbus.ObjectPath(self.sink_name)])
-        self.sink.connect_to_signal('FilterChanged',self.read_filter)
     def sink_added(self,sink):
-        self.sinks.append(sink)
+        #TODO: preserve selected sink
         self.update_sinks()
     def sink_removed(self,sink):
+        #TODO: preserve selected sink, try connecting to backup otherwise
         if sink==self.sink_name:
             #connect to new sink?
             pass
@@ -174,82 +193,37 @@ class QPaeq(QtGui.QWidget):
         manager.RemoveProfile(dbus.String(profile))
     def load_profile(self,x):
         profile=self.profile_box.itemText(x)
-        self.sink.LoadProfile(self.channel,dbus.String(profile))
+        self.sink.LoadProfile(self.filter_state.channel,dbus.String(profile))
     def select_channel(self,x):
-        self.channel = self.channel_box.itemData(x).toPyObject()
-        self.read_filter()
+        self.filter_state.channel = self.channel_box.itemData(x).toPyObject()
         self._set_profile_name()
+        self.filter_state.readback()
 
-    def set_frequencies_values(self,freqs):
-        self.frequencies=freqs+[self.sample_rate//2]
-        self.filter_frequencies=map(lambda x: int(round(x)), \
-                translate_rates(self.filter_rate,self.sample_rate,
-                    self.frequencies) \
-                )
-
-    def create_slider_layout(self):
-        main_layout=QtGui.QHBoxLayout()
-        self.slider=[None]*len(self.coefficients)
-        main_layout.addLayout(self.create_slider(partial(self.update_coefficient,0),
-            0,'Preamp')
-        )
-        for i,hz in enumerate(self.frequencies):
-            slider_i=i+1
-            if hz==0:
-                label_text='DC'
-            elif hz==self.sample_rate//2:
-                label_text='Coda'
-            else:
-                label_text=hz2str(hz)
-            cb=partial(self.update_coefficient,slider_i)
-            main_layout.addLayout(self.create_slider(cb,slider_i,label_text))
-        return main_layout
-    @staticmethod
-    def slider2coef(x):
-        return (1.0+(x/1000.0))
-    @staticmethod
-    def coef2slider(x):
-        return int((x-1.0)*1000)
-    def create_slider(self,changed_cb,index,label):
-        class SliderLabel(QtGui.QLabel):
-            def __init__(self,slider,label,parent=None):
-                QtGui.QLabel.__init__(self,label, parent)
-                self.slider=slider
-            def mouseDoubleClickEvent(self, event):
-                    self.slider.setValue(0)
-        slider_layout=QtGui.QVBoxLayout()
-        slider=QtGui.QSlider(self.orientation)
-        slider.setRange(-1000,2000)
-        slider.setSingleStep(1)
-        slider.valueChanged.connect(changed_cb)
-        slider_label=SliderLabel(slider,label)
-        slider_layout.addWidget(slider)
-        slider_layout.addWidget(slider_label)
-        self.slider[index]=slider
-        return slider_layout
-
-    def update_coefficient(self,i,v):
-        if i==0:
-            self.coefficients[i]=self.slider2coef(v)
-        else:
-            self.coefficients[i]=self.slider2coef(v)/math.sqrt(2.0)
-        self.set_filter()
-    def set_filter(self):
-        freqs=self.filter_frequencies
-        coefs=self.coefficients[1:]
-        preamp=self.coefficients[0]
-        self.sink.SeedFilter(self.channel,freqs,coefs,preamp)
-    def get_eq_attr(self,attr):
-        return self.sink_props.Get(self.sink_iface,attr)
+    #TODO: add back in preamp!
+    #print frequencies
+    #main_layout.addLayout(self.create_slider(partial(self.update_coefficient,0),
+    #    'Preamp')[0]
+    #)
     def set_connection(self):
         self.connection=connect()
         self.manager_obj=self.connection.get_object(object_path=self.manager_path)
-    def set_managed_info(self):
-        manager_props=dbus.Interface(self.manager_obj,dbus_interface=self.prop_iface)
+        manager_props=dbus.Interface(self.manager_obj,dbus_interface=prop_iface)
         self.sinks=manager_props.Get(self.manager_iface,'EqualizedSinks')
+    def set_callbacks(self):
+        manager=dbus.Interface(self.manager_obj,dbus_interface=self.manager_iface)
+        manager.connect_to_signal('ProfilesChanged',self.update_profiles)
+        manager.connect_to_signal('SinkAdded',self.sink_added)
+        manager.connect_to_signal('SinkRemoved',self.sink_removed)
+        #self._get_core().ListenForSignal(self.manager_iface,[])
+        #self._get_core().ListenForSignal(self.manager_iface,[dbus.ObjectPath(self.manager_path)])
+        #core=self._get_core()
+        #for x in ['ProfilesChanged','SinkAdded','SinkRemoved']:
+        #    core.ListenForSignal("%s.%s" %(self.manager_iface,x),[dbus.ObjectPath(self.manager_path)])
+        self.update_profiles()
+        self.update_sinks()
     def update_profiles(self):
         #print 'update profiles called!'
-        manager_props=dbus.Interface(self.manager_obj,dbus_interface=self.prop_iface)
+        manager_props=dbus.Interface(self.manager_obj,dbus_interface=prop_iface)
         self.profiles=manager_props.Get(self.manager_iface,'Profiles')
         self.profile_box.blockSignals(True)
         self.profile_box.clear()
@@ -259,39 +233,236 @@ class QPaeq(QtGui.QWidget):
     def update_sinks(self):
         self.sink_box.blockSignals(True)
         self.sink_box.clear()
-        self.sink_box.addItems(self.sinks)
+        for x in self.sinks:
+            sink=self.connection.get_object(object_path=x)
+            sink_props=dbus.Interface(sink,dbus_interface=prop_iface)
+            simple_name=sink_props.Get(device_iface,'Name')
+            self.sink_box.addItem(simple_name,x)
         self.sink_box.blockSignals(False)
-    def set_sink_info(self):
-        sink=self.connection.get_object(object_path=self.sink_name)
-        self.sink_props=dbus.Interface(sink,dbus_interface=self.prop_iface)
-        self.sink=dbus.Interface(sink,dbus_interface=self.sink_iface)
-        self.sample_rate=self.get_eq_attr('SampleRate')
-        self.filter_rate=self.get_eq_attr('FilterSampleRate')
-        self.channels=self.get_eq_attr('NChannels')
-        self.channel=self.channels
+        self.sink_box.setMinimumSize(self.sink_box.sizeHint())
     def read_filter(self):
-        coefs,preamp=self.sink.FilterAtPoints(self.channel,self.filter_frequencies)
-        self.coefficients=[preamp]+coefs
-        #print self.coefficients
-        for i,v in enumerate(self.coefficients):
-            self.slider[i].blockSignals(True)
-            if i>0:
-                v=v*math.sqrt(2.0)
-            self.slider[i].setValue(self.coef2slider(v))
-            self.slider[i].blockSignals(False)
+        #print self.filter_frequencies
+        self.filter_state.readback()
     def reset(self):
+        self.filter_state.coefficients=[1/math.sqrt(2.0)]*(self.filter_rate//2+1)
         coefs=dbus.Array([1/math.sqrt(2.0)]*(self.filter_rate//2+1))
-        channel = int(self.channel)
-        self.sink.SetFilter(self.channel,coefs,1.0)
-        self.read_filter()
+        self.filter_state.channel = int(self.channel)
+        self.sink.SetFilter(self.channel,dbus.Array(coefs),1.0)
     def _set_profile_name(self):
         self.profile_box.blockSignals(True)
-        profile_name=self.sink.BaseProfile(self.channel)
+        profile_name=self.sink.BaseProfile(self.filter_state.channel)
         if profile_name is not None:
             i=self.profile_box.findText(profile_name)
             if i>=0:
                 self.profile_box.setCurrentIndex(i)
         self.profile_box.blockSignals(False)
+
+
+class SliderArray(QtGui.QWidget):
+    def __init__(self,filter_state,parent=None):
+        super(SliderArray,self).__init__(parent)
+        self.filter_state=filter_state
+        self.setLayout(QtGui.QHBoxLayout())
+        self.sub_array=None
+        self.set_sub_array(SliderArraySub(self.filter_state))
+        self.inhibit_resize=0
+    def set_sub_array(self,widget):
+        if self.sub_array is not None:
+            self.layout().removeWidget(self.sub_array)
+            self.sub_array.disconnect_signals()
+            self.sub_array.deleteLater()
+        self.sub_array=widget
+        self.layout().addWidget(self.sub_array)
+        self.sub_array.connect_signals()
+        self.filter_state.readback()
+    def resizeEvent(self,event):
+        super(SliderArray,self).resizeEvent(event)
+        if self.inhibit_resize==0:
+            self.inhibit_resize+=1
+            #self.add_sliders_to_fit()
+            t=QtCore.QTimer(self)
+            t.setSingleShot(True)
+            t.setInterval(0)
+            t.timeout.connect(partial(self.add_sliders_to_fit,event))
+            t.start()
+    def add_sliders_to_fit(self,event):
+        i=len(self.filter_state.frequencies)
+        t_w=self.size().width()
+        def evaluate(filter_state, target, variable):
+            base_freqs=self.filter_state.freq_proper(self.filter_state.DEFAULT_FREQUENCIES)
+            filter_state._set_frequency_values(subdivide(base_freqs,variable))
+            new_widget=SliderArraySub(filter_state)
+            w=new_widget.sizeHint().width()
+            return w-target
+        def searcher(initial,evaluator):
+            i=initial
+            def d(e): return 1 if e>=0 else -1
+            error=evaluator(i)
+            old_direction=d(error)
+            i-=old_direction
+            while True:
+                error=evaluator(i)
+                direction=d(error)
+                if direction!=old_direction:
+                    k=i-1
+                    #while direction<0 and error!=0:
+                    #    k-=1
+                    #    error=evaluator(i)
+                    #    direction=d(error)
+                    return k, evaluator(k)
+                i-=direction
+                old_direction=direction
+        searcher(i,partial(evaluate,self.filter_state,t_w))
+        self.set_sub_array(SliderArraySub(self.filter_state))
+        self.inhibit_resize-=1
+
+class SliderArraySub(QtGui.QWidget):
+    def __init__(self,filter_state,parent=None):
+        super(SliderArraySub,self).__init__(parent)
+        self.filter_state=filter_state
+        self.setLayout(QtGui.QGridLayout())
+        self.slider=[None]*len(self.filter_state.frequencies)
+        self.label=[None]*len(self.slider)
+        #self.setStyleSheet('font-size: 7pt; font-family: monospace;'+outline%('blue'))
+        qt=QtCore.Qt
+        #self.layout().setHorizontalSpacing(1)
+        for i,hz in enumerate(self.filter_state.frequencies):
+            slider=QtGui.QSlider(QtCore.Qt.Vertical,self)
+            self.slider[i]=slider
+            slider.setRange(-1000,2000)
+            slider.setSingleStep(1)
+            #slider.setStyleSheet('font-size: 7pt; font-family: monospace;'+outline%('red',))
+            label=SliderLabel(hz,filter_state,self)
+            self.label[i]=label
+
+            self.layout().addWidget(slider,0,i,qt.AlignHCenter)
+            self.layout().addWidget(label,1,i,qt.AlignHCenter)
+            self.layout().setColumnMinimumWidth(i,max(label.sizeHint().width(),slider.sizeHint().width()))
+    def connect_signals(self):
+        self.writer_callbacks=[None]*len(self.slider)
+        self.reader_callbacks=[None]*len(self.slider)
+        self.label_callbacks=[None]*len(self.label)
+        for i in range(len(self.slider)):
+            self.writer_callbacks[i]=partial(self.write_coefficient,i)
+            self.reader_callbacks[i]=partial(self.sync_coefficient,i)
+            self.label_callbacks[i]=partial(self.slider[i].setValue,0)
+            self.slider[i].valueChanged.connect(self.writer_callbacks[i])
+            self.filter_state.readFilter.connect(self.reader_callbacks[i])
+            self.label[i].clicked.connect(self.label_callbacks[i])
+    def disconnect_signals(self):
+        for i in range(len(self.slider)):
+            self.slider[i].valueChanged.disconnect(self.writer_callbacks[i])
+            self.filter_state.readFilter.disconnect(self.reader_callbacks[i])
+            self.label[i].clicked.disconnect(self.label_callbacks[i])
+
+
+    def write_coefficient(self,i,v):
+        self.filter_state.coefficients[i]=self.slider2coef(v)
+        self.filter_state.seed()
+    def sync_coefficient(self,i):
+        slider=self.slider[i]
+        slider.blockSignals(True)
+        slider.setValue(self.coef2slider(self.filter_state.coefficients[i]))
+        slider.blockSignals(False)
+    @staticmethod
+    def slider2coef(x):
+        return (1.0+(x/1000.0))/math.sqrt(2.0)
+    @staticmethod
+    def coef2slider(x):
+        return int((x*math.sqrt(2.0)-1.0)*1000)
+outline='border-width: 1px; border-style: solid; border-color: %s;'
+
+class SliderLabel(QtGui.QLabel):
+    clicked=QtCore.pyqtSignal()
+    def __init__(self,hz,filter_state,parent=None):
+        super(SliderLabel,self).__init__(parent)
+        self.setStyleSheet('font-size: 7pt; font-family: monospace;')
+        if hz==0:
+            label_text='DC'
+        elif hz==filter_state.sample_rate//2:
+            label_text='Coda'
+        else:
+            label_text=hz2str(hz)
+        self.setText(label_text)
+        self.setMinimumSize(self.sizeHint())
+    def mouseDoubleClickEvent(self, event):
+        self.clicked.emit()
+        super(SliderLabel,self).mouseDoubleClickEvent(event)
+
+class FilterState(QtCore.QObject):
+    #DEFAULT_FREQUENCIES=map(float,[25,50,75,100,150,200,300,400,500,800,1e3,1.5e3,3e3,5e3,7e3,10e3,15e3,20e3])
+    DEFAULT_FREQUENCIES=[31.75,63.5,125,250,500,1e3,2e3,4e3,8e3,16e3]
+    readFilter=QtCore.pyqtSignal()
+    def __init__(self,sink):
+        super(FilterState,self).__init__()
+        self.sink_props=dbus.Interface(sink,dbus_interface=prop_iface)
+        self.sink=dbus.Interface(sink,dbus_interface=eq_iface)
+        self.sample_rate=self.get_eq_attr('SampleRate')
+        self.filter_rate=self.get_eq_attr('FilterSampleRate')
+        self.channels=self.get_eq_attr('NChannels')
+        self.channel=self.channels
+        self.set_frequency_values(self.DEFAULT_FREQUENCIES)
+    def get_eq_attr(self,attr):
+        return self.sink_props.Get(eq_iface,attr)
+    def freq_proper(self,xs):
+        return [0]+xs+[self.sample_rate//2]
+    def _set_frequency_values(self,freqs):
+        self.frequencies=freqs
+        #print 'base',self.frequencies
+        self.filter_frequencies=map(lambda x: int(round(x)), \
+                self.translate_rates(self.filter_rate,self.sample_rate,
+                    self.frequencies) \
+                )
+        self.coefficients=[0.0]*len(self.frequencies)
+        self.preamp=1.0
+    def set_frequency_values(self,freqs):
+       self._set_frequency_values(self.freq_proper(freqs))
+    @staticmethod
+    def translate_rates(dst,src,rates):
+        return list(map(lambda x: x*dst/src,rates))
+    def seed(self):
+        self.sink.SeedFilter(self.channel,self.filter_frequencies,self.coefficients,self.preamp)
+
+    def readback(self):
+        coefs,preamp=self.sink.FilterAtPoints(self.channel,self.filter_frequencies)
+        self.coefficients=coefs
+        self.preamp=preamp
+        self.readFilter.emit()
+
+def safe_log(k,b):
+    i=0
+    while k//b!=0:
+        i+=1
+        k=k//b
+    return i
+def hz2str(hz):
+    p=safe_log(hz,10.0)
+    if p<3:
+        return '%dHz' %(hz,)
+    elif hz%1000==0:
+        return '%dKHz' %(hz/(10.0**3),)
+    else:
+        return '%.1fKHz' %(hz/(10.0**3),)
+
+def subdivide(xs, t_points):
+    while len(xs)<t_points:
+        m=[0]*(2*len(xs)-1)
+        m[0:len(m):2]=xs
+        for i in range(1,len(m),2):
+            m[i]=(m[i-1]+m[i+1])//2
+        xs=m
+    p_drop=len(xs)-t_points
+    p_drop_left=p_drop//2
+    p_drop_right=p_drop-p_drop_left
+    #print 'xs',xs
+    #print 'dropping %d, %d left, %d right' %(p_drop,p_drop_left,p_drop_right)
+    c=len(xs)//2
+    left=xs[0:p_drop_left*2:2]+xs[p_drop_left*2:c]
+    right=list(reversed(xs[c:]))
+    right=right[0:p_drop_right*2:2]+right[p_drop_right*2:]
+    right=list(reversed(right))
+    return left+right
+
 def main():
     dbus.mainloop.qt.DBusQtMainLoop(set_as_default=True)
     app=QtGui.QApplication(sys.argv)
