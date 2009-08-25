@@ -182,10 +182,10 @@ class QPaeq(QtGui.QWidget):
             ret=mbox.exec_()
             if ret!=mbox.Save:
                 return
-        self.sink.SaveProfile(self.channel,dbus.String(profile))
-        if channel==self.channels:
-            self.load_profile(self.channel)
-
+        self.sink.SaveProfile(self.filter_state.channel,dbus.String(profile))
+        if self.filter_state.channel==self.filter_state.channels:
+            for x in range(1,self.filter_state.channels):
+                self.sink.LoadProfile(x,dbus.String(profile))
     def remove_profile(self):
         #find active profile name, remove it
         profile=self.profile_box.currentText()
