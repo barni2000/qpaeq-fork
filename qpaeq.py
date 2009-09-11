@@ -80,6 +80,8 @@ class QPaeq(QtGui.QWidget):
         self.sink_box = QtGui.QComboBox()
         self.sink_box.setSizePolicy(sizePolicy)
         self.sink_box.setDuplicatesEnabled(False)
+        self.sink_box.setInsertPolicy(QtGui.QComboBox.InsertAlphabetically)
+        #self.sink_box.setSizeAdjustPolicy(QtGui.QComboBox.AdjustToContents)
         toprow_layout.addWidget(self.sink_box)
 
         toprow_layout.addWidget(QtGui.QLabel('Channel'))
@@ -90,7 +92,8 @@ class QPaeq(QtGui.QWidget):
         toprow_layout.addWidget(QtGui.QLabel('Preset'))
         self.profile_box = QtGui.QComboBox()
         self.profile_box.setSizePolicy(sizePolicy)
-        self.profile_box.setDuplicatesEnabled(False)
+        self.profile_box.setInsertPolicy(QtGui.QComboBox.InsertAlphabetically)
+        #self.profile_box.setSizeAdjustPolicy(QtGui.QComboBox.AdjustToContents)
         toprow_layout.addWidget(self.profile_box)
 
         large_icon_size=self.style().pixelMetric(QtGui.QStyle.PM_LargeIconSize)
@@ -245,7 +248,8 @@ class QPaeq(QtGui.QWidget):
         self.filter_state.readback()
     def reset(self):
         coefs=dbus.Array([1/math.sqrt(2.0)]*(self.filter_state.filter_rate//2+1))
-        self.filter_state.set_filter(coefs)
+        preamp=1.0
+        self.filter_state.set_filter(preamp,coefs)
     def _set_profile_name(self):
         self.profile_box.blockSignals(True)
         profile_name=self.sink.BaseProfile(self.filter_state.channel)
@@ -259,6 +263,8 @@ class QPaeq(QtGui.QWidget):
 class SliderArray(QtGui.QWidget):
     def __init__(self,filter_state,parent=None):
         super(SliderArray,self).__init__(parent)
+        #self.setStyleSheet('padding: 0px; border-width: 0px; margin: 0px;')
+        #self.setStyleSheet('font-size: 7pt; font-family: monospace;'+outline%('blue'))
         self.filter_state=filter_state
         self.setLayout(QtGui.QHBoxLayout())
         self.sub_array=None
@@ -285,7 +291,7 @@ class SliderArray(QtGui.QWidget):
             t.start()
     def add_sliders_to_fit(self,event):
         if event.oldSize().width()>0 and event.size().width()>0:
-            i=len(self.filter_state.frequencies)*event.size().width()/event.oldSize().width()
+            i=len(self.filter_state.frequencies)*round(float(event.size().width())/event.oldSize().width())
         else:
             i=len(self.filter_state.frequencies)
 
@@ -325,66 +331,106 @@ class SliderArraySub(QtGui.QWidget):
         self.setLayout(QtGui.QGridLayout())
         self.slider=[None]*len(self.filter_state.frequencies)
         self.label=[None]*len(self.slider)
+        #self.setStyleSheet('padding: 0px; border-width: 0px; margin: 0px;')
         #self.setStyleSheet('font-size: 7pt; font-family: monospace;'+outline%('blue'))
         qt=QtCore.Qt
         #self.layout().setHorizontalSpacing(1)
-        for i,hz in enumerate(self.filter_state.frequencies):
+        def add_slider(slider,label, c):
+            self.layout().addWidget(slider,0,c,qt.AlignHCenter)
+            self.layout().addWidget(label,1,c,qt.AlignHCenter)
+            self.layout().setColumnMinimumWidth(c,max(label.sizeHint().width(),slider.sizeHint().width()))
+        def create_slider(slider_label):
             slider=QtGui.QSlider(QtCore.Qt.Vertical,self)
-            self.slider[i]=slider
+            label=SliderLabel(slider_label,filter_state,self)
             slider.setRange(-1000,2000)
             slider.setSingleStep(1)
+            return (slider,label)
+        self.preamp_slider,self.preamp_label=create_slider('Preamp')
+        add_slider(self.preamp_slider,self.preamp_label,0)
+        for i,hz in enumerate(self.filter_state.frequencies):
+            slider,label=create_slider(self.hz2label(hz))
+            self.slider[i]=slider
             #slider.setStyleSheet('font-size: 7pt; font-family: monospace;'+outline%('red',))
-            label=SliderLabel(hz,filter_state,self)
             self.label[i]=label
+            c=i+1
+            add_slider(slider,label,i+1)
+    def hz2label(self, hz):
+        if hz==0:
+            label_text='DC'
+        elif hz==self.filter_state.sample_rate//2:
+            label_text='Coda'
+        else:
+            label_text=hz2str(hz)
+        return label_text
 
-            self.layout().addWidget(slider,0,i,qt.AlignHCenter)
-            self.layout().addWidget(label,1,i,qt.AlignHCenter)
-            self.layout().setColumnMinimumWidth(i,max(label.sizeHint().width(),slider.sizeHint().width()))
     def connect_signals(self):
+        def connect(writer,reader,slider,label):
+            slider.valueChanged.connect(writer)
+            self.filter_state.readFilter.connect(reader)
+            label_cb=partial(slider.setValue,0)
+            label.clicked.connect(label_cb)
+            return label_cb
+
+        self.preamp_writer_cb=self.write_preamp
+        self.preamp_reader_cb=self.sync_preamp
+        self.preamp_label_cb=connect(self.preamp_writer_cb,
+                self.preamp_reader_cb,
+                self.preamp_slider,
+                self.preamp_label)
         self.writer_callbacks=[None]*len(self.slider)
         self.reader_callbacks=[None]*len(self.slider)
         self.label_callbacks=[None]*len(self.label)
         for i in range(len(self.slider)):
             self.writer_callbacks[i]=partial(self.write_coefficient,i)
             self.reader_callbacks[i]=partial(self.sync_coefficient,i)
-            self.label_callbacks[i]=partial(self.slider[i].setValue,0)
-            self.slider[i].valueChanged.connect(self.writer_callbacks[i])
-            self.filter_state.readFilter.connect(self.reader_callbacks[i])
-            self.label[i].clicked.connect(self.label_callbacks[i])
+            self.label_callbacks[i]=connect(self.writer_callbacks[i],
+                    self.reader_callbacks[i],
+                    self.slider[i],
+                    self.label[i])
     def disconnect_signals(self):
+        def disconnect(writer,reader,label_cb,slider,label):
+            slider.valueChanged.disconnect(writer)
+            self.filter_state.readFilter.disconnect(reader)
+            label.clicked.disconnect(label_cb)
+        disconnect(self.preamp_writer_cb, self.preamp_reader_cb,
+                self.preamp_label_cb, self.preamp_slider, self.preamp_label)
         for i in range(len(self.slider)):
-            self.slider[i].valueChanged.disconnect(self.writer_callbacks[i])
-            self.filter_state.readFilter.disconnect(self.reader_callbacks[i])
-            self.label[i].clicked.disconnect(self.label_callbacks[i])
+            disconnect(self.writer_callbacks[i],
+                    self.reader_callbacks[i],
+                    self.label_callbacks[i],
+                    self.slider[i],
+                    self.label[i])
+
+    def write_preamp(self, v):
+        self.filter_state.preamp=self.slider2coef(v)
+        self.filter_state.seed()
+    def sync_preamp(self):
+        self.preamp_slider.blockSignals(True)
+        self.preamp_slider.setValue(self.coef2slider(self.filter_state.preamp))
+        self.preamp_slider.blockSignals(False)
 
 
     def write_coefficient(self,i,v):
-        self.filter_state.coefficients[i]=self.slider2coef(v)
+        self.filter_state.coefficients[i]=self.slider2coef(v)/math.sqrt(2.0)
         self.filter_state.seed()
     def sync_coefficient(self,i):
         slider=self.slider[i]
         slider.blockSignals(True)
-        slider.setValue(self.coef2slider(self.filter_state.coefficients[i]))
+        slider.setValue(self.coef2slider(math.sqrt(2.0)*self.filter_state.coefficients[i]))
         slider.blockSignals(False)
     @staticmethod
     def slider2coef(x):
-        return (1.0+(x/1000.0))/math.sqrt(2.0)
+        return (1.0+(x/1000.0))
     @staticmethod
     def coef2slider(x):
-        return int((x*math.sqrt(2.0)-1.0)*1000)
+        return int((x-1.0)*1000)
 outline='border-width: 1px; border-style: solid; border-color: %s;'
 
 class SliderLabel(QtGui.QLabel):
     clicked=QtCore.pyqtSignal()
-    def __init__(self,hz,filter_state,parent=None):
+    def __init__(self,label_text,filter_state,parent=None):
         super(SliderLabel,self).__init__(parent)
         self.setStyleSheet('font-size: 7pt; font-family: monospace;')
-        if hz==0:
-            label_text='DC'
-        elif hz==filter_state.sample_rate//2:
-            label_text='Coda'
-        else:
-            label_text=hz2str(hz)
         self.setText(label_text)
         self.setMinimumSize(self.sizeHint())
     def mouseDoubleClickEvent(self, event):
@@ -429,7 +475,7 @@ class FilterState(QtCore.QObject):
         self.coefficients=coefs
         self.preamp=preamp
         self.readFilter.emit()
-    def set_filter(self,coefs):
+    def set_filter(self,preamp,coefs):
         self.sink.SetFilter(self.channel,dbus.Array(coefs),self.preamp)
 
 
