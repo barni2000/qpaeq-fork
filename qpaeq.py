@@ -291,7 +291,7 @@ class SliderArray(QtGui.QWidget):
             t.start()
     def add_sliders_to_fit(self,event):
         if event.oldSize().width()>0 and event.size().width()>0:
-            i=len(self.filter_state.frequencies)*round(float(event.size().width())/event.oldSize().width())
+            i=len(self.filter_state.frequencies)*int(round(float(event.size().width())/event.oldSize().width()))
         else:
             i=len(self.filter_state.frequencies)
 
