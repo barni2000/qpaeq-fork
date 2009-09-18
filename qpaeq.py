@@ -26,7 +26,7 @@ import dbus
 
 import signal
 signal.signal(signal.SIGINT, signal.SIG_DFL)
-SYNC_TIMEOUT = 5*1000
+SYNC_TIMEOUT = 4*1000
 
 CORE_PATH = "/org/pulseaudio/core1"
 CORE_IFACE = "org.PulseAudio.Core1"
@@ -490,7 +490,7 @@ class FilterState(QtCore.QObject):
         self.sink.SetFilter(self.channel,dbus.Array(coefs),self.preamp)
         self.sync_timer.start(SYNC_TIMEOUT)
     def save_state(self):
-        #print 'saving state'
+        print 'saving state'
         self.sink.SaveState()
     def load_profile(self,profile):
         self.sink.LoadProfile(self.filter_state.channel,dbus.String(profile))
