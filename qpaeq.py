@@ -59,7 +59,7 @@ class QPaeq(QtGui.QWidget):
         self.setWindowTitle('qpaeq')
         self.slider_widget=None
         self.sink_name=None
-        self.sync_timer=None
+        self.filter_state=None
 
         self.create_layout()
 
@@ -120,21 +120,16 @@ class QPaeq(QtGui.QWidget):
 
         self.profile_box.activated.connect(self.load_profile)
         self.channel_box.activated.connect(self.select_channel)
-
     def connect_to_sink(self,name):
         #TODO: clear slots for profile buttons
 
         #flush any pending saves for other sinks
-        if self.sync_timer and self.sync_timer.isActive():
-            self.sync_timer.stop()
-            self.filter_state.save_state()
+        if self.filter_state is not None:
+            self.filter_state.flush_state()
         sink=self.connection.get_object(object_path=name)
         self.sink_props=dbus.Interface(sink,dbus_interface=prop_iface)
         self.sink=dbus.Interface(sink,dbus_interface=eq_iface)
         self.filter_state=FilterState(sink)
-        self.sync_timer = QtCore.QTimer()
-        self.sync_timer.setSingleShot(True)
-        self.sync_timer.timeout.connect(self.filter_state.save_state)
         #sample_rate,filter_rate,channels,channel)
 
         self.channel_box.clear()
@@ -153,7 +148,7 @@ class QPaeq(QtGui.QWidget):
         #for x in ['FilterChanged']:
         #    core.ListenForSignal("%s.%s" %(self.eq_iface,x),[dbus.ObjectPath(self.sink_name)])
         #core.ListenForSignal(self.eq_iface,[dbus.ObjectPath(self.sink_name)])
-        self.sink.connect_to_signal('FilterChanged',self.sync_filter)
+        self.sink.connect_to_signal('FilterChanged',self.read_filter)
 
     def set_slider_widget(self,widget):
         layout=self.layout()
@@ -205,7 +200,7 @@ class QPaeq(QtGui.QWidget):
         manager.RemoveProfile(dbus.String(profile))
     def load_profile(self,x):
         profile=self.profile_box.itemText(x)
-        self.sink.LoadProfile(self.filter_state.channel,dbus.String(profile))
+        self.filter_state.load_profile(profile)
     def select_channel(self,x):
         self.filter_state.channel = self.channel_box.itemData(x).toPyObject()
         self._set_profile_name()
@@ -252,9 +247,6 @@ class QPaeq(QtGui.QWidget):
             self.sink_box.addItem(simple_name,x)
         self.sink_box.blockSignals(False)
         self.sink_box.setMinimumSize(self.sink_box.sizeHint())
-    def sync_filter(self):
-        self.read_filter()
-        self.sync_timer.start(SYNC_TIMEOUT)#15 seconds till state is stored to disk
     def read_filter(self):
         #print self.filter_frequencies
         self.filter_state.readback()
@@ -449,6 +441,8 @@ class SliderLabel(QtGui.QLabel):
         self.clicked.emit()
         super(SliderLabel,self).mouseDoubleClickEvent(event)
 
+#until there are server side state savings, do it in the client but try and avoid
+#simulaneous broadcasting situations
 class FilterState(QtCore.QObject):
     #DEFAULT_FREQUENCIES=map(float,[25,50,75,100,150,200,300,400,500,800,1e3,1.5e3,3e3,5e3,7e3,10e3,15e3,20e3])
     DEFAULT_FREQUENCIES=[31.75,63.5,125,250,500,1e3,2e3,4e3,8e3,16e3]
@@ -462,6 +456,9 @@ class FilterState(QtCore.QObject):
         self.channels=self.get_eq_attr('NChannels')
         self.channel=self.channels
         self.set_frequency_values(self.DEFAULT_FREQUENCIES)
+        self.sync_timer=QtCore.QTimer()
+        self.sync_timer.setSingleShot(True)
+        self.sync_timer.timeout.connect(self.save_state)
 
     def get_eq_attr(self,attr):
         return self.sink_props.Get(eq_iface,attr)
@@ -477,12 +474,13 @@ class FilterState(QtCore.QObject):
         self.coefficients=[0.0]*len(self.frequencies)
         self.preamp=1.0
     def set_frequency_values(self,freqs):
-       self._set_frequency_values(self.freq_proper(freqs))
+        self._set_frequency_values(self.freq_proper(freqs))
     @staticmethod
     def translate_rates(dst,src,rates):
         return list(map(lambda x: x*dst/src,rates))
     def seed(self):
         self.sink.SeedFilter(self.channel,self.filter_frequencies,self.coefficients,self.preamp)
+        self.sync_timer.start(SYNC_TIMEOUT)
     def readback(self):
         coefs,preamp=self.sink.FilterAtPoints(self.channel,self.filter_frequencies)
         self.coefficients=coefs
@@ -490,9 +488,18 @@ class FilterState(QtCore.QObject):
         self.readFilter.emit()
     def set_filter(self,preamp,coefs):
         self.sink.SetFilter(self.channel,dbus.Array(coefs),self.preamp)
+        self.sync_timer.start(SYNC_TIMEOUT)
     def save_state(self):
         #print 'saving state'
         self.sink.SaveState()
+    def load_profile(self,profile):
+        self.sink.LoadProfile(self.filter_state.channel,dbus.String(profile))
+        self.sync_timer.start(SYNC_TIMEOUT)
+    def flush_state(self):
+        if self.sync_timer.isActive():
+            self.sync_timer.stop()
+            self.save_state()
+
 
 def safe_log(k,b):
     i=0
