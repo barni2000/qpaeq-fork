@@ -493,7 +493,7 @@ class FilterState(QtCore.QObject):
         print 'saving state'
         self.sink.SaveState()
     def load_profile(self,profile):
-        self.sink.LoadProfile(self.filter_state.channel,dbus.String(profile))
+        self.sink.LoadProfile(self.channel,dbus.String(profile))
         self.sync_timer.start(SYNC_TIMEOUT)
     def flush_state(self):
         if self.sync_timer.isActive():
