@@ -501,7 +501,7 @@ class FilterState(QtCore.QObject):
         self.preamp=preamp
         self.readFilter.emit()
     def set_filter(self,preamp,coefs):
-        self.sink.SetFilter(self.channel,dbus.Array(coefs),self.preamp)
+        self.sink.SetFilter(self.channel,dbus.Array(coefs),preamp)
         self.sync_timer.start(SYNC_TIMEOUT)
     def save_state(self):
         print 'saving state'
