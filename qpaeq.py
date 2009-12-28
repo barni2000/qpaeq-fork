@@ -426,12 +426,12 @@ class SliderArraySub(QtGui.QWidget):
         self.preamp_slider.blockSignals(True)
         self.preamp_slider.setValue(self.coef2slider(self.filter_state.preamp))
         self.preamp_slider.blockSignals(False)
-
-
     def write_coefficient(self,i,v):
         self.filter_state.coefficients[i]=self.slider2coef(v)/math.sqrt(2.0)
+        #print 'trying %f, %f'%(v, self.filter_state.coefficients[i])
         self.filter_state.seed()
     def sync_coefficient(self,i):
+        #print 'reading back %d'%i
         slider=self.slider[i]
         slider.blockSignals(True)
         slider.setValue(self.coef2slider(math.sqrt(2.0)*self.filter_state.coefficients[i]))
@@ -473,6 +473,7 @@ class FilterState(QtCore.QObject):
         self.sync_timer=QtCore.QTimer()
         self.sync_timer.setSingleShot(True)
         self.sync_timer.timeout.connect(self.save_state)
+        self.ignores=0
 
     def get_eq_attr(self,attr):
         return self.sink_props.Get(eq_iface,attr)
@@ -495,11 +496,16 @@ class FilterState(QtCore.QObject):
     def seed(self):
         self.sink.SeedFilter(self.channel,self.filter_frequencies,self.coefficients,self.preamp)
         self.sync_timer.start(SYNC_TIMEOUT)
+        self.ignores+=1
     def readback(self):
-        coefs,preamp=self.sink.FilterAtPoints(self.channel,self.filter_frequencies)
-        self.coefficients=coefs
-        self.preamp=preamp
-        self.readFilter.emit()
+        #print 'ignore %d' %(self.ignores)
+        if self.ignores>0:
+            self.ignores-=1
+        else:
+            coefs,preamp=self.sink.FilterAtPoints(self.channel,self.filter_frequencies)
+            self.coefficients=coefs
+            self.preamp=preamp
+            self.readFilter.emit()
     def set_filter(self,preamp,coefs):
         self.sink.SetFilter(self.channel,dbus.Array(coefs),preamp)
         self.sync_timer.start(SYNC_TIMEOUT)
