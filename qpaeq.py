@@ -358,7 +358,7 @@ class SliderArraySub(QtGui.QWidget):
             self.layout().addWidget(label,0,c,qt.AlignHCenter)
             self.layout().addWidget(slider,1,c,qt.AlignHCenter)
             self.layout().addWidget(value,2,c,qt.AlignHCenter)
-            self.layout().setColumnMinimumWidth(c,max(label.sizeHint().width(),slider.sizeHint().width(),value.sizeHint().width(),30))
+            self.layout().setColumnMinimumWidth(c,max(label.sizeHint().width(),slider.sizeHint().width(),value.sizeHint().width()))
         def create_slider(slider_label):
             slider=QtGui.QSlider(QtCore.Qt.Vertical,self)
             label=SliderLabel(slider_label,filter_state,self)
@@ -368,7 +368,7 @@ class SliderArraySub(QtGui.QWidget):
             slider.setPageStep(100)
             return (slider,label,value)
         self.preamp_slider,self.preamp_label,self.preamp_value=create_slider('Preamp')
-        self.preamp_slider.setRange(-1500,0)
+        self.preamp_slider.setRange(-1500,1500)
         add_slider(self.preamp_slider,self.preamp_label,self.preamp_value,0)
         for i,hz in enumerate(self.filter_state.frequencies):
             slider,label,value=create_slider(self.hz2label(hz))
