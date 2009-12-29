@@ -265,7 +265,7 @@ class QPaeq(QtGui.QWidget):
         #print self.filter_frequencies
         self.filter_state.readback()
     def reset(self):
-        coefs=dbus.Array([1/math.sqrt(2.0)]*(self.filter_state.filter_rate//2+1))
+        coefs=dbus.Array([1]*(self.filter_state.filter_rate//2+1))
         preamp=1.0
         self.filter_state.set_filter(preamp,coefs)
     def _set_profile_name(self):
@@ -349,29 +349,35 @@ class SliderArraySub(QtGui.QWidget):
         self.setLayout(QtGui.QGridLayout())
         self.slider=[None]*len(self.filter_state.frequencies)
         self.label=[None]*len(self.slider)
+        self.value=[None]*len(self.slider)
         #self.setStyleSheet('padding: 0px; border-width: 0px; margin: 0px;')
         #self.setStyleSheet('font-size: 7pt; font-family: monospace;'+outline%('blue'))
         qt=QtCore.Qt
         #self.layout().setHorizontalSpacing(1)
-        def add_slider(slider,label, c):
-            self.layout().addWidget(slider,0,c,qt.AlignHCenter)
-            self.layout().addWidget(label,1,c,qt.AlignHCenter)
-            self.layout().setColumnMinimumWidth(c,max(label.sizeHint().width(),slider.sizeHint().width()))
+        def add_slider(slider,label,value,c):
+            self.layout().addWidget(label,0,c,qt.AlignHCenter)
+            self.layout().addWidget(slider,1,c,qt.AlignHCenter)
+            self.layout().addWidget(value,2,c,qt.AlignHCenter)
+            self.layout().setColumnMinimumWidth(c,max(label.sizeHint().width(),slider.sizeHint().width(),value.sizeHint().width(),30))
         def create_slider(slider_label):
             slider=QtGui.QSlider(QtCore.Qt.Vertical,self)
             label=SliderLabel(slider_label,filter_state,self)
-            slider.setRange(-1000,2000)
-            slider.setSingleStep(1)
-            return (slider,label)
-        self.preamp_slider,self.preamp_label=create_slider('Preamp')
-        add_slider(self.preamp_slider,self.preamp_label,0)
+            value=SliderLabel('0.0',filter_state,self)
+            slider.setRange(-1500,1500)
+            slider.setSingleStep(10)
+            slider.setPageStep(100)
+            return (slider,label,value)
+        self.preamp_slider,self.preamp_label,self.preamp_value=create_slider('Preamp')
+        self.preamp_slider.setRange(-1500,0)
+        add_slider(self.preamp_slider,self.preamp_label,self.preamp_value,0)
         for i,hz in enumerate(self.filter_state.frequencies):
-            slider,label=create_slider(self.hz2label(hz))
+            slider,label,value=create_slider(self.hz2label(hz))
             self.slider[i]=slider
             #slider.setStyleSheet('font-size: 7pt; font-family: monospace;'+outline%('red',))
             self.label[i]=label
+            self.value[i]=value
             c=i+1
-            add_slider(slider,label,i+1)
+            add_slider(slider,label,value,i+1)
     def hz2label(self, hz):
         if hz==0:
             label_text='DC'
@@ -420,28 +426,32 @@ class SliderArraySub(QtGui.QWidget):
                     self.label[i])
 
     def write_preamp(self, v):
+        v=round(v,-1)
+        self.preamp_slider.blockSignals(True)
+        self.preamp_slider.setValue(v)
         self.filter_state.preamp=self.slider2coef(v)
         self.filter_state.seed()
-    def sync_preamp(self):
-        self.preamp_slider.blockSignals(True)
-        self.preamp_slider.setValue(self.coef2slider(self.filter_state.preamp))
         self.preamp_slider.blockSignals(False)
+    def sync_preamp(self):
+        self.preamp_slider.setValue(round(self.coef2slider(self.filter_state.preamp),-1))
+        self.preamp_value.setText(str(self.preamp_slider.value()/100.0))
     def write_coefficient(self,i,v):
-        self.filter_state.coefficients[i]=self.slider2coef(v)/math.sqrt(2.0)
-        #print 'trying %f, %f'%(v, self.filter_state.coefficients[i])
-        self.filter_state.seed()
-    def sync_coefficient(self,i):
-        #print 'reading back %d'%i
+        v=round(v,-1)
         slider=self.slider[i]
         slider.blockSignals(True)
-        slider.setValue(self.coef2slider(math.sqrt(2.0)*self.filter_state.coefficients[i]))
+        slider.setValue(v)
+        self.filter_state.coefficients[i]=self.slider2coef(v)
+        self.filter_state.seed()
         slider.blockSignals(False)
+    def sync_coefficient(self,i):
+        self.slider[i].setValue(round(self.coef2slider(self.filter_state.coefficients[i]),-1))
+        self.value[i].setText(str(self.slider[i].value()/100.0))
     @staticmethod
     def slider2coef(x):
-        return (1.0+(x/1000.0))
+        return math.pow(10.0,x/2000.0)
     @staticmethod
     def coef2slider(x):
-        return int((x-1.0)*1000)
+        return math.log10(x)*2000.0
 outline='border-width: 1px; border-style: solid; border-color: %s;'
 
 class SliderLabel(QtGui.QLabel):
@@ -473,7 +483,6 @@ class FilterState(QtCore.QObject):
         self.sync_timer=QtCore.QTimer()
         self.sync_timer.setSingleShot(True)
         self.sync_timer.timeout.connect(self.save_state)
-        self.ignores=0
 
     def get_eq_attr(self,attr):
         return self.sink_props.Get(eq_iface,attr)
@@ -496,16 +505,11 @@ class FilterState(QtCore.QObject):
     def seed(self):
         self.sink.SeedFilter(self.channel,self.filter_frequencies,self.coefficients,self.preamp)
         self.sync_timer.start(SYNC_TIMEOUT)
-        self.ignores+=1
     def readback(self):
-        #print 'ignore %d' %(self.ignores)
-        if self.ignores>0:
-            self.ignores-=1
-        else:
-            coefs,preamp=self.sink.FilterAtPoints(self.channel,self.filter_frequencies)
-            self.coefficients=coefs
-            self.preamp=preamp
-            self.readFilter.emit()
+        coefs,preamp=self.sink.FilterAtPoints(self.channel,self.filter_frequencies)
+        self.coefficients=coefs
+        self.preamp=preamp
+        self.readFilter.emit()
     def set_filter(self,preamp,coefs):
         self.sink.SetFilter(self.channel,dbus.Array(coefs),preamp)
         self.sync_timer.start(SYNC_TIMEOUT)
