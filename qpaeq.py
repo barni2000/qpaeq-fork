@@ -444,7 +444,7 @@ class SliderArraySub(QtGui.QWidget):
         slider.blockSignals(False)
         self.value[i].setText(str(slider.value()/10.0))
     @staticmethod
-	def slider2coef(x):
+    def slider2coef(x):
         #map x to [-1.5,1.5], divide by dB constant
         return math.pow(10.0,x/10.0/20.0)
     @staticmethod
