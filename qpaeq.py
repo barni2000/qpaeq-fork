@@ -368,7 +368,6 @@ class SliderArraySub(QtGui.QWidget):
             slider.setPageStep(10)
             return (slider,label,value)
         self.preamp_slider,self.preamp_label,self.preamp_value=create_slider('Preamp')
-        self.preamp_slider.setRange(-150,150)
         add_slider(self.preamp_slider,self.preamp_label,self.preamp_value,0)
         for i,hz in enumerate(self.filter_state.frequencies):
             slider,label,value=create_slider(self.hz2label(hz))
@@ -426,39 +425,36 @@ class SliderArraySub(QtGui.QWidget):
                     self.label[i])
 
     def write_preamp(self, v):
-        #see write_coefficient for comments
-        v=round(v)
-        #self.preamp_slider.blockSignals(True)
-        #self.preamp_slider.setValue(v)
         self.filter_state.preamp=self.slider2coef(v)
         self.filter_state.seed()
-        #self.preamp_slider.blockSignals(False)
+        self.preamp_value.setText(str(self.preamp_slider.value()/10.0))
     def sync_preamp(self):
-        self.preamp_slider.setValue(self.coef2slider(self.filter_state.preamp))
-        self.preamp_value.setText(str(self.preamp_slider.value()/100.0))
+        self.preamp_slider.blockSignals(True)
+        self.preamp_slider.setValue(round(self.coef2slider(self.filter_state.preamp)))
+        self.preamp_slider.blockSignals(False)
+        self.preamp_value.setText(str(self.preamp_slider.value()/10.0))
     def write_coefficient(self,i,v):
-        #adjust v to the nearest 10th and rewrite that value back to the slider
-        v=round(v)
-        #slider=self.slider[i]
-        #slider.blockSignals(True)
-        #slider.setValue(v)
         self.filter_state.coefficients[i]=self.slider2coef(v)
         self.filter_state.seed()
-        #slider.blockSignals(False)
+        self.value[i].setText(str(self.slider[i].value()/10.0))
     def sync_coefficient(self,i):
-        self.slider[i].setValue(self.coef2slider(self.filter_state.coefficients[i]))
-        self.value[i].setText(str(self.slider[i].value()/100.0))
+        slider=self.slider[i]
+        slider.blockSignals(True)
+        slider.setValue(round(self.coef2slider(self.filter_state.coefficients[i])))
+        slider.blockSignals(False)
+        self.value[i].setText(str(slider.value()/10.0))
     @staticmethod
-    def slider2coef(x):
-        #map x to [-15,15], divide by dB constant
-        return math.pow(10.0,x/10.0/(20.0))
+	def slider2coef(x):
+        #map x to [-1.5,1.5], divide by dB constant
+        return math.pow(10.0,x/10.0/20.0)
     @staticmethod
     def coef2slider(x):
         print x
         try:
-            return math.log10(x)*20*10.0
+            return math.log10(x)*20.0*10.0
         except ValueError:
-            return -150
+            return -150.0
+
 outline='border-width: 1px; border-style: solid; border-color: %s;'
 
 class SliderLabel(QtGui.QLabel):
