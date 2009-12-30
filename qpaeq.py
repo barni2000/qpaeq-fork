@@ -444,6 +444,7 @@ class SliderArraySub(QtGui.QWidget):
         self.preamp_value.setText("%.2f"%(self.preamp_slider.value()/float(NORM_GRANULARITY)))
     def write_coefficient(self,i,v):
         self.filter_state.coefficients[i]=self.slider2coef(v)
+        print v, self.filter_state.coefficients[i]
         self.filter_state.seed()
         self.value[i].setText("%.2f"%(self.slider[i].value()/float(NORM_GRANULARITY)))
     def sync_coefficient(self,i):
@@ -529,7 +530,7 @@ class FilterState(QtCore.QObject):
         self.sync_timer.start(SYNC_TIMEOUT)
         self.ignores+=1
     def readback(self):
-        #print 'ignore %d' %(self.ignores)
+        print 'ignore %d' %(self.ignores)
         if self.ignores>0:
             self.ignores-=1
         else:
