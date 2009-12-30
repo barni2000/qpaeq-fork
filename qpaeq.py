@@ -34,7 +34,7 @@ from functools import partial
 
 NORM_GRANULARITY = 100
 MAX_AMP = 1.5
-GRANULARITY = int(1.5 * NORM_GRANULARITY)
+GRANULARITY = int(MAX_AMP * NORM_GRANULARITY)
 
 import signal
 signal.signal(signal.SIGINT, signal.SIG_DFL)
@@ -363,7 +363,7 @@ class SliderArraySub(QtGui.QWidget):
             self.layout().addWidget(label,0,c,qt.AlignHCenter)
             self.layout().addWidget(slider,1,c,qt.AlignHCenter)
             self.layout().addWidget(value,2,c,qt.AlignHCenter)
-            self.layout().setColumnMinimumWidth(c,max(label.sizeHint().width(),slider.sizeHint().width(),value.sizeHint().width(), 20))
+            self.layout().setColumnMinimumWidth(c,max(label.sizeHint().width(),slider.sizeHint().width(),value.sizeHint().width(), 30))
         def create_slider(slider_label):
             slider=QtGui.QSlider(QtCore.Qt.Vertical,self)
             label=SliderLabel(slider_label,filter_state,self)
@@ -454,7 +454,7 @@ class SliderArraySub(QtGui.QWidget):
         self.value[i].update()
     @staticmethod
     def slider2coef(x):
-        #map x to ~ [-1, 1], divide by dB constant
+        #map x to ~ [-1, 1], divide by dB constant and convert to linear term
         return math.pow(10.0, x/(NORM_GRANULARITY*2.0))
     @staticmethod
     def coef2slider(x):
