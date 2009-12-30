@@ -34,8 +34,9 @@ from functools import partial
 
 NORM_GRANULARITY = 100
 MAX_AMP = 1.5
+MIN_AMP = 2.5
 GRANULARITY = int(MAX_AMP * NORM_GRANULARITY)
-
+MIN_GRANULARITY = int(MIN_AMP * NORM_GRANULARITY)
 import signal
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 SYNC_TIMEOUT = 4*1000
@@ -368,7 +369,7 @@ class SliderArraySub(QtGui.QWidget):
             slider=QtGui.QSlider(QtCore.Qt.Vertical,self)
             label=SliderLabel(slider_label,filter_state,self)
             value=ValueLabel(slider,filter_state,self)
-            slider.setRange(-GRANULARITY,GRANULARITY)
+            slider.setRange(-MIN_GRANULARITY,GRANULARITY)
             slider.setSingleStep(1)
             slider.setPageStep(10)
             return (slider,label,value)
