@@ -367,7 +367,7 @@ class SliderArraySub(QtGui.QWidget):
         def create_slider(slider_label):
             slider=QtGui.QSlider(QtCore.Qt.Vertical,self)
             label=SliderLabel(slider_label,filter_state,self)
-            value=SliderLabel('0.0',filter_state,self)
+            value=ValueLabel(slider,filter_state,self)
             slider.setRange(-GRANULARITY,GRANULARITY)
             slider.setSingleStep(1)
             slider.setPageStep(10)
@@ -436,23 +436,22 @@ class SliderArraySub(QtGui.QWidget):
         self.filter_state.preamp=self.slider2coef(v)
         self.filter_state.seed()
         #self.preamp_slider.blockSignals(False)
-        self.preamp_value.setText("%.1f"%(self.preamp_slider.value()*10.0/NORM_GRANULARITY))
+        self.preamp_value.update()
     def sync_preamp(self):
         self.preamp_slider.blockSignals(True)
         self.preamp_slider.setValue(self.coef2slider(self.filter_state.preamp))
         self.preamp_slider.blockSignals(False)
-        self.preamp_value.setText("%.1f"%(self.preamp_slider.value()*10.0/NORM_GRANULARITY))
+        self.preamp_value.update()
     def write_coefficient(self,i,v):
         self.filter_state.coefficients[i]=self.slider2coef(v)
-        print v, self.filter_state.coefficients[i]
         self.filter_state.seed()
-        self.value[i].setText("%.1f"%(self.slider[i].value()*10.0/NORM_GRANULARITY))
+        self.value[i].update()
     def sync_coefficient(self,i):
         slider=self.slider[i]
         slider.blockSignals(True)
         slider.setValue(self.coef2slider(self.filter_state.coefficients[i]))
         slider.blockSignals(False)
-        self.value[i].setText("%.1f"%(self.slider[i].value()*10.0/NORM_GRANULARITY))
+        self.value[i].update()
     @staticmethod
     def slider2coef(x):
         #map x to ~ [-1, 1], divide by dB constant
@@ -466,16 +465,25 @@ class SliderArraySub(QtGui.QWidget):
             return -float(GRANULARITY)
 outline='border-width: 1px; border-style: solid; border-color: %s;'
 
+SLIDER_BASE_CSS='font-size: 7pt; font-family: monospace;'
 class SliderLabel(QtGui.QLabel):
     clicked=QtCore.pyqtSignal()
     def __init__(self,label_text,filter_state,parent=None):
         super(SliderLabel,self).__init__(parent)
-        self.setStyleSheet('font-size: 7pt; font-family: monospace;')
+        self.setStyleSheet(SLIDER_BASE_CSS)
         self.setText(label_text)
         self.setMinimumSize(self.sizeHint())
     def mouseDoubleClickEvent(self, event):
         self.clicked.emit()
         super(SliderLabel,self).mouseDoubleClickEvent(event)
+
+class ValueLabel(SliderLabel):
+    def __init__(self,slider,filter_state,parent=None):
+        SliderLabel.__init__(self,'0.0',filter_state,parent)
+        self.slider=slider
+    def update(self):
+        self.setText("%.1f"%(self.slider.value()*10.0/NORM_GRANULARITY))
+
 
 #until there are server side state savings, do it in the client but try and avoid
 #simulaneous broadcasting situations
@@ -520,11 +528,11 @@ class FilterState(QtCore.QObject):
         self.sync_timer.start(SYNC_TIMEOUT)
         self.ignores+=1
     def readback(self):
-        print 'ignore %d' %(self.ignores)
+        #print 'ignore %d' %(self.ignores)
         if self.ignores>0:
             self.ignores-=1
         else:
-            print 'readback!'
+            #print 'readback!'
             coefs,preamp=self.sink.FilterAtPoints(self.channel,self.filter_frequencies)
             self.coefficients=coefs
             self.preamp=preamp
