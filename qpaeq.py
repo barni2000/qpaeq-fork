@@ -430,7 +430,7 @@ class SliderArraySub(QtGui.QWidget):
         self.preamp_value.setText(str(self.preamp_slider.value()/10.0))
     def sync_preamp(self):
         self.preamp_slider.blockSignals(True)
-        self.preamp_slider.setValue(self.coef2slider(self.filter_state.preamp))
+        self.preamp_slider.setValue(round(self.coef2slider(self.filter_state.preamp)))
         self.preamp_slider.blockSignals(False)
         self.preamp_value.setText(str(self.preamp_slider.value()/10.0))
     def write_coefficient(self,i,v):
@@ -440,7 +440,7 @@ class SliderArraySub(QtGui.QWidget):
     def sync_coefficient(self,i):
         slider=self.slider[i]
         slider.blockSignals(True)
-        slider.setValue(self.coef2slider(self.filter_state.coefficients[i]))
+        slider.setValue(round(self.coef2slider(self.filter_state.coefficients[i])))
         slider.blockSignals(False)
         self.value[i].setText(str(slider.value()/10.0))
     @staticmethod
