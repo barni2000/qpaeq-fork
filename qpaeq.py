@@ -32,6 +32,10 @@ except ImportError,e:
 
 from functools import partial
 
+NORM_GRANULARITY = 100
+MAX_AMP = 1.5
+GRANULARITY = int(1.5 * NORM_GRANULARITY)
+
 import signal
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 SYNC_TIMEOUT = 4*1000
@@ -363,12 +367,12 @@ class SliderArraySub(QtGui.QWidget):
             slider=QtGui.QSlider(QtCore.Qt.Vertical,self)
             label=SliderLabel(slider_label,filter_state,self)
             value=SliderLabel('0.0',filter_state,self)
-            slider.setRange(-150,150)
+            slider.setRange(-GRANULARITY,GRANULARITY)
             slider.setSingleStep(1)
             slider.setPageStep(10)
             return (slider,label,value)
         self.preamp_slider,self.preamp_label,self.preamp_value=create_slider('Preamp')
-        self.preamp_slider.setRange(-150,150)
+        self.preamp_slider.setRange(-GRANULARITY,GRANULARITY)
         add_slider(self.preamp_slider,self.preamp_label,self.preamp_value,0)
         for i,hz in enumerate(self.filter_state.frequencies):
             slider,label,value=create_slider(self.hz2label(hz))
@@ -427,7 +431,6 @@ class SliderArraySub(QtGui.QWidget):
 
     def write_preamp(self, v):
         #see write_coefficient for comments
-        v=round(v)
         #self.preamp_slider.blockSignals(True)
         #self.preamp_slider.setValue(v)
         self.filter_state.preamp=self.slider2coef(v)
@@ -435,30 +438,25 @@ class SliderArraySub(QtGui.QWidget):
         #self.preamp_slider.blockSignals(False)
     def sync_preamp(self):
         self.preamp_slider.setValue(self.coef2slider(self.filter_state.preamp))
-        self.preamp_value.setText(str(self.preamp_slider.value()/100.0))
+        self.preamp_value.setText("%.2f"%(self.preamp_slider.value()/float(NORM_GRANULARITY)))
     def write_coefficient(self,i,v):
-        #adjust v to the nearest 10th and rewrite that value back to the slider
-        v=round(v)
-        #slider=self.slider[i]
-        #slider.blockSignals(True)
-        #slider.setValue(v)
         self.filter_state.coefficients[i]=self.slider2coef(v)
+        print v, self.filter_state.coefficients[i]
         self.filter_state.seed()
-        #slider.blockSignals(False)
     def sync_coefficient(self,i):
         self.slider[i].setValue(self.coef2slider(self.filter_state.coefficients[i]))
-        self.value[i].setText(str(self.slider[i].value()/100.0))
+        self.value[i].setText("%.2f"%(self.slider[i].value()/float(NORM_GRANULARITY)))
     @staticmethod
     def slider2coef(x):
         #map x to [-15,15], divide by dB constant
-        return math.pow(10.0,x/10.0/(20.0))
+        return math.pow(10.0,float(x)/(NORM_GRANULARITY*(20.0)))
     @staticmethod
     def coef2slider(x):
-        print x
         try:
-            return math.log10(x)*20*10.0
-        except ValueError:
-            return -150
+            return math.log10(x)*20.0*NORM_GRANULARITY
+        except ValueError, e:
+            print 'zerod number!', e
+            return -float(GRANULARITY)
 outline='border-width: 1px; border-style: solid; border-color: %s;'
 
 class SliderLabel(QtGui.QLabel):
@@ -515,10 +513,11 @@ class FilterState(QtCore.QObject):
         self.sync_timer.start(SYNC_TIMEOUT)
         self.ignores+=1
     def readback(self):
-        #print 'ignore %d' %(self.ignores)
+        print 'ignore %d' %(self.ignores)
         if self.ignores>0:
             self.ignores-=1
         else:
+            print 'readback!'
             coefs,preamp=self.sink.FilterAtPoints(self.channel,self.filter_frequencies)
             self.coefficients=coefs
             self.preamp=preamp
