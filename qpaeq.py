@@ -347,6 +347,7 @@ class SliderArray(QtGui.QWidget):
         self.inhibit_resize-=1
 
 class SliderArraySub(QtGui.QWidget):
+    readFilter=QtCore.pyqtSignal()
     def __init__(self,filter_state,parent=None):
         super(SliderArraySub,self).__init__(parent)
         self.filter_state=filter_state
@@ -436,24 +437,31 @@ class SliderArraySub(QtGui.QWidget):
         self.filter_state.preamp=self.slider2coef(v)
         self.filter_state.seed()
         #self.preamp_slider.blockSignals(False)
+        self.preamp_value.setText("%.2f"%(self.preamp_slider.value()/float(NORM_GRANULARITY)))
     def sync_preamp(self):
+        self.preamp_slider.blockSignals(True)
         self.preamp_slider.setValue(self.coef2slider(self.filter_state.preamp))
+        self.preamp_slider.blockSignals(False)
         self.preamp_value.setText("%.2f"%(self.preamp_slider.value()/float(NORM_GRANULARITY)))
     def write_coefficient(self,i,v):
         self.filter_state.coefficients[i]=self.slider2coef(v)
         print v, self.filter_state.coefficients[i]
         self.filter_state.seed()
+        self.value[i].setText("%.2f"%(self.slider[i].value()/float(NORM_GRANULARITY)))
     def sync_coefficient(self,i):
-        self.slider[i].setValue(self.coef2slider(self.filter_state.coefficients[i]))
+        slider=self.slider[i]
+        slider.blockSignals(True)
+        slider.setValue(self.coef2slider(self.filter_state.coefficients[i]))
+        slider.blockSignals(False)
         self.value[i].setText("%.2f"%(self.slider[i].value()/float(NORM_GRANULARITY)))
     @staticmethod
     def slider2coef(x):
         #map x to [-15,15], divide by dB constant
-        return math.pow(10.0,float(x)/(NORM_GRANULARITY*(20.0)))
+        return math.pow(10.0,float(x)/(NORM_GRANULARITY*20.0))
     @staticmethod
     def coef2slider(x):
         try:
-            return math.log10(x)*20.0*NORM_GRANULARITY
+            return round(math.log10(x)*20.0*NORM_GRANULARITY)
         except ValueError, e:
             print 'zerod number!', e
             return -float(GRANULARITY)
