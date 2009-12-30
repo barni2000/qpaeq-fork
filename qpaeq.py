@@ -367,7 +367,7 @@ class SliderArraySub(QtGui.QWidget):
         def create_slider(slider_label):
             slider=QtGui.QSlider(QtCore.Qt.Vertical,self)
             label=SliderLabel(slider_label,filter_state,self)
-            value=SliderLabel('0.0',filter_state,self)
+            value=ValueLabel(slider,filter_state,self)
             slider.setRange(-GRANULARITY,GRANULARITY)
             slider.setSingleStep(1)
             slider.setPageStep(10)
@@ -444,7 +444,6 @@ class SliderArraySub(QtGui.QWidget):
         self.preamp_value.setText("%.2f"%(self.preamp_slider.value()/float(NORM_GRANULARITY)))
     def write_coefficient(self,i,v):
         self.filter_state.coefficients[i]=self.slider2coef(v)
-        print v, self.filter_state.coefficients[i]
         self.filter_state.seed()
         self.value[i].setText("%.2f"%(self.slider[i].value()/float(NORM_GRANULARITY)))
     def sync_coefficient(self,i):
@@ -466,16 +465,25 @@ class SliderArraySub(QtGui.QWidget):
             return -float(GRANULARITY)
 outline='border-width: 1px; border-style: solid; border-color: %s;'
 
+SLIDER_BASE_CSS='font-size: 7pt; font-family: monospace;'
 class SliderLabel(QtGui.QLabel):
     clicked=QtCore.pyqtSignal()
     def __init__(self,label_text,filter_state,parent=None):
         super(SliderLabel,self).__init__(parent)
-        self.setStyleSheet('font-size: 7pt; font-family: monospace;')
+        self.setStyleSheet(SLIDER_BASE_CSS)
         self.setText(label_text)
         self.setMinimumSize(self.sizeHint())
     def mouseDoubleClickEvent(self, event):
         self.clicked.emit()
         super(SliderLabel,self).mouseDoubleClickEvent(event)
+
+class ValueLabel(SliderLabel):
+    def __init__(self,slider,filter_state,parent=None):
+        SliderLabel.__init__(self,'0.0',filter_state,parent)
+        self.slider=slider
+    def update(self):
+        self.setText("%.1f"%(self.slider.value()*10.0/NORM_GRANULARITY))
+
 
 #until there are server side state savings, do it in the client but try and avoid
 #simulaneous broadcasting situations
@@ -520,11 +528,11 @@ class FilterState(QtCore.QObject):
         self.sync_timer.start(SYNC_TIMEOUT)
         self.ignores+=1
     def readback(self):
-        print 'ignore %d' %(self.ignores)
+        #print 'ignore %d' %(self.ignores)
         if self.ignores>0:
             self.ignores-=1
         else:
-            print 'readback!'
+            #print 'readback!'
             coefs,preamp=self.sink.FilterAtPoints(self.channel,self.filter_frequencies)
             self.coefficients=coefs
             self.preamp=preamp
