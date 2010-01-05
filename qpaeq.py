@@ -455,8 +455,8 @@ class SliderArraySub(QtGui.QWidget):
         self.value[i].update()
     @staticmethod
     def slider2coef(x):
-        #map x to [-15,15], divide by dB constant
-        return math.pow(10.0,float(x)/(NORM_GRANULARITY*20.0))
+        #map x to ~ [-1, 1], divide by dB constant and convert to linear term
+        return math.pow(10.0, x/(NORM_GRANULARITY*2.0))
     @staticmethod
     def coef2slider(x):
         try:
