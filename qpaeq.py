@@ -440,7 +440,7 @@ class SliderArraySub(QtGui.QWidget):
         self.preamp_value.update()
     def sync_preamp(self):
         self.preamp_slider.blockSignals(True)
-        self.preamp_slider.setValue(round(self.coef2slider(self.filter_state.preamp)))
+        self.preamp_slider.setValue(self.coef2slider(self.filter_state.preamp))
         self.preamp_slider.blockSignals(False)
         self.preamp_value.update()
     def write_coefficient(self,i,v):
@@ -448,10 +448,9 @@ class SliderArraySub(QtGui.QWidget):
         self.filter_state.seed()
         self.value[i].update()
     def sync_coefficient(self,i):
-        #print 'reading back %d'%i
         slider=self.slider[i]
         slider.blockSignals(True)
-        slider.setValue(round(self.coef2slider(self.filter_state.coefficients[i])))
+        slider.setValue(self.coef2slider(self.filter_state.coefficients[i]))
         slider.blockSignals(False)
         self.value[i].update()
     @staticmethod
@@ -461,10 +460,10 @@ class SliderArraySub(QtGui.QWidget):
     @staticmethod
     def coef2slider(x):
         try:
-            return round(math.log10(x)*20.0*NORM_GRANULARITY)
+            return int(round(math.log10(x)*2.0*NORM_GRANULARITY))
         except ValueError, e:
             print 'zerod number!', e
-            return -float(GRANULARITY)
+            return -GRANULARITY
 outline='border-width: 1px; border-style: solid; border-color: %s;'
 
 SLIDER_BASE_CSS='font-size: 7pt; font-family: monospace;'
