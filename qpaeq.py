@@ -504,7 +504,6 @@ class FilterState(QtCore.QObject):
         self.sync_timer=QtCore.QTimer()
         self.sync_timer.setSingleShot(True)
         self.sync_timer.timeout.connect(self.save_state)
-        self.ignores=0
 
     def get_eq_attr(self,attr):
         return self.sink_props.Get(eq_iface,attr)
@@ -527,7 +526,6 @@ class FilterState(QtCore.QObject):
     def seed(self):
         self.sink.SeedFilter(self.channel,self.filter_frequencies,self.coefficients,self.preamp)
         self.sync_timer.start(SYNC_TIMEOUT)
-        self.ignores+=1
     def readback(self):
         #print 'ignore %d' %(self.ignores)
         if self.ignores>0:
