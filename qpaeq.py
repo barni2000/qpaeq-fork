@@ -447,6 +447,7 @@ class SliderArraySub(QtGui.QWidget):
         self.filter_state.seed()
         self.value[i].setText("%.2f"%(self.slider[i].value()/float(NORM_GRANULARITY)))
     def sync_coefficient(self,i):
+        #print 'reading back %d'%i
         slider=self.slider[i]
         slider.blockSignals(True)
         slider.setValue(self.coef2slider(self.filter_state.coefficients[i]))
