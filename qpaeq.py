@@ -332,7 +332,7 @@ class SliderArray(QtGui.QWidget):
             old_direction=d(error)
             i-=old_direction
             while True:
-                error=evaluator(i)
+                nerror=evaluator(i)
                 direction=d(error)
                 if direction!=old_direction:
                     k=i-1
@@ -342,6 +342,16 @@ class SliderArray(QtGui.QWidget):
                     #    direction=d(error)
                     return k, evaluator(k)
                 i-=direction
+                if nerror==error:
+                    #error is not changing => we're stuck
+                    if old_direction==direction:
+                        #this case defies logic, it means the error is not getting lower even though we're trying
+                        print 'not oscilating but error won\'t shrink, something fishy is going on'
+                    else:
+                        #switching directions = oscilating
+                        print 'caught oscilating!'
+                    return k, evaluator(k)
+                error=nerror
                 old_direction=direction
         searcher(i,partial(evaluate,self.filter_state,t_w))
         self.set_sub_array(SliderArraySub(self.filter_state))
