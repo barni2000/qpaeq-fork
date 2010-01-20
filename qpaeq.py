@@ -310,50 +310,78 @@ class SliderArray(QtGui.QWidget):
             t=QtCore.QTimer(self)
             t.setSingleShot(True)
             t.setInterval(0)
-            t.timeout.connect(partial(self.add_sliders_to_fit,event))
+            e_old_w = event.oldSize().width()
+            e_w = event.size().width()
+            e = (e_old_w, e_w)
+            t.timeout.connect(partial(self.add_sliders_to_fit,e))
             t.start()
     def add_sliders_to_fit(self,event):
-        if event.oldSize().width()>0 and event.size().width()>0:
-            i=len(self.filter_state.frequencies)*int(round(float(event.size().width())/event.oldSize().width()))
+        if options.debug:
+            print 'add sliders to fit'
+        e_old_w, e_w = event
+        #t_w = e_w
+        t_w=self.size().width()
+        if options.debug:
+            print 'old e_w = %d, t_w = %d' %(e_old_w, t_w)
+        if e_old_w>0 and t_w>0:
+            #use previous bands to estimate a good starter i to speed things up
+            old_i=len(self.filter_state.frequencies)
+            i=int(round(float(t_w))/e_old_w*old_i)
         else:
+            #i=len(self.filter_state.DEFAULT_FREQUENCIES)
             i=len(self.filter_state.frequencies)
 
-        t_w=self.size().width()
         def evaluate(filter_state, target, variable):
             base_freqs=self.filter_state.freq_proper(self.filter_state.DEFAULT_FREQUENCIES)
             filter_state._set_frequency_values(subdivide(base_freqs,variable))
             new_widget=SliderArraySub(filter_state)
             w=new_widget.sizeHint().width()
-            return w-target
+            error = target-w
+            if options.debug:
+                print 'evaluating w/ target=%s, variable=%s, result=%d, error=%d' %(str(target),str(variable),w,error)
+            return error
         def searcher(initial,evaluator):
             i=initial
             def d(e): return 1 if e>=0 else -1
-            error=evaluator(i)
-            old_direction=d(error)
-            i-=old_direction
+            old_error=evaluator(i)
+            old_direction=d(old_error)
+            i+=old_direction
             while True:
-                nerror=evaluator(i)
+                error=evaluator(i)
                 direction=d(error)
                 if direction!=old_direction:
-                    k=i-1
-                    #while direction<0 and error!=0:
-                    #    k-=1
-                    #    error=evaluator(i)
-                    #    direction=d(error)
-                    return k, evaluator(k)
-                i-=direction
-                if nerror==error:
+                    if error>=0:
+                        #just got small enough, ok
+                        return i, error
+                    else:
+                        #just got too big, need to get smaller
+                        k=i-1
+                        return k, evaluator(k)
+                if error==old_error:
+                    #this code is here just as a precaution - it probably will never be used
+
                     #error is not changing => we're stuck
                     if old_direction==direction:
                         #this case defies logic, it means the error is not getting lower even though we're trying
+                        #maybe our environment is trying to pull a fast one?
                         print 'not oscilating but error won\'t shrink, something fishy is going on'
                     else:
                         #switching directions = oscilating
                         print 'caught oscilating!'
-                    return k, evaluator(k)
-                error=nerror
+                    return i, error
+                #elif nerror>=error:
+                #    #we just started doing worse
+                #    print 'runaway detected'
+                #    return i, evaluator(i)
+                i+=direction
+                old_error=error
                 old_direction=direction
-        searcher(i,partial(evaluate,self.filter_state,t_w))
+        #the evaluating function has a side effect here on filter_state's frequencies
+        #so while searcher returns what is chosen, if the searcher found a solution
+        #it's already set
+        best_i, error = searcher(i,partial(evaluate,self.filter_state,t_w))
+        if options.debug:
+            print 'Chose bands=%d with error=%d\n' %(best_i, error)
         self.set_sub_array(SliderArraySub(self.filter_state))
         self.inhibit_resize-=1
 
@@ -597,9 +625,16 @@ def subdivide(xs, t_points):
     right=list(reversed(right))
     return left+right
 
+import optparse
+options = None
 def main():
+
+    parser = optparse.OptionParser()
+    parser.add_option("-d", "--debug", action="store_true", dest="debug")
+    global options
+    options, args = parser.parse_args(sys.argv)
     dbus.mainloop.qt.DBusQtMainLoop(set_as_default=True)
-    app=QtGui.QApplication(sys.argv)
+    app=QtGui.QApplication(args)
     qpaeq_main=QPaeq()
     qpaeq_main.show()
     sys.exit(app.exec_())
