@@ -404,7 +404,14 @@ class SliderArraySub(QtGui.QWidget):
             self.layout().addWidget(value,2,c,qt.AlignHCenter)
             self.layout().setColumnMinimumWidth(c,max(label.sizeHint().width(),slider.sizeHint().width(),value.sizeHint().width(), 30))
         def create_slider(slider_label):
-            slider=QtGui.QSlider(QtCore.Qt.Vertical,self)
+            class Slider(QtGui.QSlider):
+                def __init__(self, *args, **kwargs):
+                    QtGui.QSlider.__init__(self, *args, **kwargs)
+                def wheelEvent(self, event):
+                    dx = 1 if event.delta() > 0 else -1
+                    self.setValue(self.value() + dx)
+                    event.accept()
+            slider=Slider(QtCore.Qt.Vertical,self)
             label=SliderLabel(slider_label,filter_state,self)
             value=ValueLabel(slider,filter_state,self)
             slider.setRange(-MIN_GRANULARITY,GRANULARITY)
