@@ -20,9 +20,8 @@ import os
 import math
 import sys
 try:
-    import PyQt4, sip
-    from PyQt4 import QtGui, QtCore
-    import dbus.mainloop.qt
+    from PyQt5 import QtWidgets, QtCore
+    import dbus.mainloop.pyqt5
     import dbus
 except ImportError as e:
     sys.stderr.write('There was an error importing needed libraries\n'
@@ -75,7 +74,7 @@ eq_iface = 'org.PulseAudio.Ext.Equalizing1.Equalizer'
 device_iface = 'org.PulseAudio.Core1.Device'
 
 
-class QPaeq(QtGui.QWidget):
+class QPaeq(QtWidgets.QWidget):
     manager_path = '/org/pulseaudio/equalizing1'
     manager_iface = 'org.PulseAudio.Ext.Equalizing1.Manager'
     core_iface = 'org.PulseAudio.Core1'
@@ -83,7 +82,7 @@ class QPaeq(QtGui.QWidget):
     module_name = 'module-equalizer-sink'
 
     def __init__(self):
-        QtGui.QWidget.__init__(self)
+        QtWidgets.QWidget.__init__(self)
         self.setWindowTitle('qpaeq')
         self.slider_widget = None
         self.sink_name = None
@@ -97,53 +96,53 @@ class QPaeq(QtGui.QWidget):
         self.setMinimumSize(self.sizeHint())
 
     def create_layout(self):
-        self.main_layout = QtGui.QVBoxLayout()
+        self.main_layout = QtWidgets.QVBoxLayout()
         self.setLayout(self.main_layout)
-        toprow_layout = QtGui.QHBoxLayout()
-        sizePolicy = QtGui.QSizePolicy(
-            QtGui.QSizePolicy.Preferred,
-            QtGui.QSizePolicy.Fixed
+        toprow_layout = QtWidgets.QHBoxLayout()
+        sizePolicy = QtWidgets.QSizePolicy(
+            QtWidgets.QSizePolicy.Preferred,
+            QtWidgets.QSizePolicy.Fixed
         )
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         # sizePolicy.setHeightForWidth(self.profile_box.sizePolicy().hasHeightForWidth())
 
-        toprow_layout.addWidget(QtGui.QLabel('Sink'))
-        self.sink_box = QtGui.QComboBox()
+        toprow_layout.addWidget(QtWidgets.QLabel('Sink'))
+        self.sink_box = QtWidgets.QComboBox()
         self.sink_box.setSizePolicy(sizePolicy)
         self.sink_box.setDuplicatesEnabled(False)
-        self.sink_box.setInsertPolicy(QtGui.QComboBox.InsertAlphabetically)
-        # self.sink_box.setSizeAdjustPolicy(QtGui.QComboBox.AdjustToContents)
+        self.sink_box.setInsertPolicy(QtWidgets.QComboBox.InsertAlphabetically)
+        # self.sink_box.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
         toprow_layout.addWidget(self.sink_box)
 
-        toprow_layout.addWidget(QtGui.QLabel('Channel'))
-        self.channel_box = QtGui.QComboBox()
+        toprow_layout.addWidget(QtWidgets.QLabel('Channel'))
+        self.channel_box = QtWidgets.QComboBox()
         self.channel_box.setSizePolicy(sizePolicy)
         toprow_layout.addWidget(self.channel_box)
 
-        toprow_layout.addWidget(QtGui.QLabel('Preset'))
-        self.profile_box = QtGui.QComboBox()
+        toprow_layout.addWidget(QtWidgets.QLabel('Preset'))
+        self.profile_box = QtWidgets.QComboBox()
         self.profile_box.setSizePolicy(sizePolicy)
-        self.profile_box.setInsertPolicy(QtGui.QComboBox.InsertAlphabetically)
-        # self.profile_box.setSizeAdjustPolicy(QtGui.QComboBox.AdjustToContents)
+        self.profile_box.setInsertPolicy(QtWidgets.QComboBox.InsertAlphabetically)
+        # self.profile_box.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
         toprow_layout.addWidget(self.profile_box)
 
         large_icon_size = self.style().pixelMetric(
-            QtGui.QStyle.PM_LargeIconSize
+            QtWidgets.QStyle.PM_LargeIconSize
         )
         large_icon_size = QtCore.QSize(large_icon_size, large_icon_size)
 
-        save_profile = QtGui.QToolButton()
+        save_profile = QtWidgets.QToolButton()
         save_profile.setIcon(
-            self.style().standardIcon(QtGui.QStyle.SP_DriveFDIcon)
+            self.style().standardIcon(QtWidgets.QStyle.SP_DriveFDIcon)
         )
         save_profile.setIconSize(large_icon_size)
         save_profile.setToolButtonStyle(QtCore.Qt.ToolButtonIconOnly)
         save_profile.clicked.connect(self.save_profile)
 
-        remove_profile = QtGui.QToolButton()
+        remove_profile = QtWidgets.QToolButton()
         remove_profile.setIcon(
-            self.style().standardIcon(QtGui.QStyle.SP_TrashIcon)
+            self.style().standardIcon(QtWidgets.QStyle.SP_TrashIcon)
         )
         remove_profile.setIconSize(large_icon_size)
         remove_profile.setToolButtonStyle(QtCore.Qt.ToolButtonIconOnly)
@@ -152,7 +151,7 @@ class QPaeq(QtGui.QWidget):
         toprow_layout.addWidget(save_profile)
         toprow_layout.addWidget(remove_profile)
 
-        reset_button = QtGui.QPushButton('Reset')
+        reset_button = QtWidgets.QPushButton('Reset')
         reset_button.clicked.connect(self.reset)
         toprow_layout.addStretch()
         toprow_layout.addWidget(reset_button)
@@ -228,7 +227,7 @@ class QPaeq(QtGui.QWidget):
     def save_profile(self):
         # popup dialog box for name
         current = self.profile_box.currentIndex()
-        profile, ok = QtGui.QInputDialog.getItem(
+        profile, ok = QtWidgets.QInputDialog.getItem(
             self,
             'Preset Name',
             'Preset',
@@ -239,7 +238,7 @@ class QPaeq(QtGui.QWidget):
             return
 
         if profile in self.profiles:
-            mbox = QtGui.QMessageBox(self)
+            mbox = QtWidgets.QMessageBox(self)
             mbox.setText('{} preset already exists'.format(profile))
             mbox.setInformativeText('Do you want to save over it?')
             mbox.setStandardButtons(mbox.Save | mbox.Discard | mbox.Cancel)
@@ -266,7 +265,7 @@ class QPaeq(QtGui.QWidget):
         self.filter_state.load_profile(profile)
 
     def select_channel(self, x):
-        self.filter_state.channel = self.channel_box.itemData(x).toPyObject()
+        self.filter_state.channel = self.channel_box.itemData(x)
         self._set_profile_name()
         self.filter_state.readback()
 
@@ -372,13 +371,13 @@ class QPaeq(QtGui.QWidget):
         self.profile_box.blockSignals(False)
 
 
-class SliderArray(QtGui.QWidget):
+class SliderArray(QtWidgets.QWidget):
     def __init__(self, filter_state, parent=None):
         super(SliderArray, self).__init__(parent)
         # self.setStyleSheet('padding: 0px; border-width: 0px; margin: 0px;')
         # self.setStyleSheet('font-family: monospace;'+outline%('blue'))
         self.filter_state = filter_state
-        self.setLayout(QtGui.QHBoxLayout())
+        self.setLayout(QtWidgets.QHBoxLayout())
         self.sub_array = None
         self.set_sub_array(SliderArraySub(self.filter_state))
         self.inhibit_resize = 0
@@ -447,11 +446,11 @@ class SliderArray(QtGui.QWidget):
         self.inhibit_resize -= 1
 
 
-class SliderArraySub(QtGui.QWidget):
+class SliderArraySub(QtWidgets.QWidget):
     def __init__(self, filter_state, parent=None):
         super(SliderArraySub, self).__init__(parent)
         self.filter_state = filter_state
-        self.setLayout(QtGui.QGridLayout())
+        self.setLayout(QtWidgets.QGridLayout())
         self.slider = [None]*len(self.filter_state.frequencies)
         self.label = [None]*len(self.slider)
         # self.setStyleSheet('padding: 0px; border-width: 0px; margin: 0px;')
@@ -467,7 +466,7 @@ class SliderArraySub(QtGui.QWidget):
             )
 
         def create_slider(slider_label):
-            slider = QtGui.QSlider(QtCore.Qt.Vertical, self)
+            slider = QtWidgets.QSlider(QtCore.Qt.Vertical, self)
             label = SliderLabel(slider_label, filter_state, self)
             slider.setRange(-1000, 2000)
             slider.setSingleStep(1)
@@ -579,7 +578,7 @@ class SliderArraySub(QtGui.QWidget):
 outline = 'border-width: 1px; border-style: solid; border-color: %s;'
 
 
-class SliderLabel(QtGui.QLabel):
+class SliderLabel(QtWidgets.QLabel):
     clicked = QtCore.pyqtSignal()
 
     def __init__(self, label_text, filter_state, parent=None):
@@ -611,7 +610,7 @@ class FilterState(QtCore.QObject):
         self.channels = self.get_eq_attr('NChannels')
         self.channel = self.channels
         self.set_frequency_values(self.DEFAULT_FREQUENCIES)
-        self.sync_timer = QtCore.QTimer()
+        self.sync_timer = QtCore.QTimer(self)
         self.sync_timer.setSingleShot(True)
         self.sync_timer.timeout.connect(self.save_state)
 
@@ -690,7 +689,7 @@ def hz2str(hz):
     elif hz % 1000 == 0:
         return '{}KHz'.format(hz/(10.0**3))
     else:
-        return '{}KHz'.fromat(hz/(10.0**3))
+        return '{}KHz'.format(hz/(10.0**3))
 
 
 def subdivide(xs, t_points):
@@ -715,8 +714,8 @@ def subdivide(xs, t_points):
 
 
 def main():
-    dbus.mainloop.qt.DBusQtMainLoop(set_as_default=True)
-    app = QtGui.QApplication(sys.argv)
+    dbus.mainloop.pyqt5.DBusQtMainLoop(set_as_default=True)
+    app = QtWidgets.QApplication(sys.argv)
     qpaeq_main = QPaeq()
     qpaeq_main.show()
     sys.exit(app.exec_())
