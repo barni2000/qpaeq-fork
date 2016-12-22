@@ -22,21 +22,15 @@ try:
     from PyQt4 import QtGui,QtCore
     import dbus.mainloop.qt
     import dbus
-except ImportError,e:
-    print 'There was an error importing need libraries'
-    print 'Make sure you have pyqt4 and dbus for python installed'
-    print 'The error that occured was'
-    print '\t%s' %(str(e))
-    import sys
+except ImportError as e:
+    sys.stderr.write('There was an error importing needed libraries\n'
+                     'Make sure you have qt4 and dbus-python installed\n'
+                     'The error that occured was:\n'
+                     '\t%s\n' % (str(e)))
     sys.exit(-1)
 
 from functools import partial
 
-NORM_GRANULARITY = 100
-MAX_AMP = 1.5
-MIN_AMP = 2.5
-GRANULARITY = int(MAX_AMP * NORM_GRANULARITY)
-MIN_GRANULARITY = int(MIN_AMP * NORM_GRANULARITY)
 import signal
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 SYNC_TIMEOUT = 4*1000
@@ -52,10 +46,10 @@ def connect():
             server_lookup = bus.get_object('org.PulseAudio1', '/org/pulseaudio/server_lookup1')
             address = server_lookup.Get('org.PulseAudio.ServerLookup1', 'Address', dbus_interface='org.freedesktop.DBus.Properties')
         return dbus.connection.Connection(address)
-    except Exception,e:
-        print 'There was an error connecting to pulseaudio, please make sure you have the pulseaudio dbus'
-        print 'and equalizer modules loaded, exiting...'
-        import sys
+    except Exception as e:
+        sys.stderr.write('There was an error connecting to pulseaudio, '
+                         'please make sure you have the pulseaudio dbus '
+                         'module loaded, exiting...\n')
         sys.exit(-1)
 
 
@@ -73,6 +67,8 @@ class QPaeq(QtGui.QWidget):
     manager_iface='org.PulseAudio.Ext.Equalizing1.Manager'
     core_iface='org.PulseAudio.Core1'
     core_path='/org/pulseaudio/core1'
+    module_name='module-equalizer-sink'
+
     def __init__(self):
         QtGui.QWidget.__init__(self)
         self.setWindowTitle('qpaeq')
@@ -153,7 +149,7 @@ class QPaeq(QtGui.QWidget):
 
         self.channel_box.clear()
         self.channel_box.addItem('All',self.filter_state.channels)
-        for i in xrange(self.filter_state.channels):
+        for i in range(self.filter_state.channels):
             self.channel_box.addItem('%d' %(i+1,),i)
         self.setMinimumSize(self.sizeHint())
 
@@ -226,15 +222,31 @@ class QPaeq(QtGui.QWidget):
         self.filter_state.readback()
 
     #TODO: add back in preamp!
-    #print frequencies
+    #print(frequencies)
     #main_layout.addLayout(self.create_slider(partial(self.update_coefficient,0),
     #    'Preamp')[0]
     #)
     def set_connection(self):
         self.connection=connect()
+
         self.manager_obj=self.connection.get_object(object_path=self.manager_path)
         manager_props=dbus.Interface(self.manager_obj,dbus_interface=prop_iface)
-        self.sinks=manager_props.Get(self.manager_iface,'EqualizedSinks')
+        try:
+            self.sinks=manager_props.Get(self.manager_iface,'EqualizedSinks')
+        except dbus.exceptions.DBusException:
+            # probably module not yet loaded, try to load it:
+            try:
+                core=self.connection.get_object(object_path=self.core_path)
+                core.LoadModule(self.module_name,{},dbus_interface=self.core_iface)
+                # yup, we don't need to re-create manager_obj and manager_props,
+                # these are late-bound
+                self.sinks=manager_props.Get(self.manager_iface,'EqualizedSinks')
+            except dbus.exceptions.DBusException:
+                sys.stderr.write('It seems that running pulseaudio does not support '
+                                 'equalizer features and loading %s module failed.\n'
+                                 'Exiting...\n' % self.module_name)
+                sys.exit(-1)
+
     def set_callbacks(self):
         manager=dbus.Interface(self.manager_obj,dbus_interface=self.manager_iface)
         manager.connect_to_signal('ProfilesChanged',self.update_profiles)
@@ -248,7 +260,7 @@ class QPaeq(QtGui.QWidget):
         self.update_profiles()
         self.update_sinks()
     def update_profiles(self):
-        #print 'update profiles called!'
+        #print('update profiles called!')
         manager_props=dbus.Interface(self.manager_obj,dbus_interface=prop_iface)
         self.profiles=manager_props.Get(self.manager_iface,'Profiles')
         self.profile_box.blockSignals(True)
@@ -267,10 +279,10 @@ class QPaeq(QtGui.QWidget):
         self.sink_box.blockSignals(False)
         self.sink_box.setMinimumSize(self.sink_box.sizeHint())
     def read_filter(self):
-        #print self.filter_frequencies
+        #print(self.filter_frequencies)
         self.filter_state.readback()
     def reset(self):
-        coefs=dbus.Array([1]*(self.filter_state.filter_rate//2+1))
+        coefs=dbus.Array([1/math.sqrt(2.0)]*(self.filter_state.filter_rate//2+1))
         preamp=1.0
         self.filter_state.set_filter(preamp,coefs)
     def _set_profile_name(self):
@@ -287,7 +299,7 @@ class SliderArray(QtGui.QWidget):
     def __init__(self,filter_state,parent=None):
         super(SliderArray,self).__init__(parent)
         #self.setStyleSheet('padding: 0px; border-width: 0px; margin: 0px;')
-        #self.setStyleSheet('font-size: 7pt; font-family: monospace;'+outline%('blue'))
+        #self.setStyleSheet('font-family: monospace;'+outline%('blue'))
         self.filter_state=filter_state
         self.setLayout(QtGui.QHBoxLayout())
         self.sub_array=None
@@ -310,124 +322,73 @@ class SliderArray(QtGui.QWidget):
             t=QtCore.QTimer(self)
             t.setSingleShot(True)
             t.setInterval(0)
-            e_old_w = event.oldSize().width()
-            e_w = event.size().width()
-            e = (e_old_w, e_w)
-            t.timeout.connect(partial(self.add_sliders_to_fit,e))
+            t.timeout.connect(partial(self.add_sliders_to_fit,event))
             t.start()
     def add_sliders_to_fit(self,event):
-        if options.debug:
-            print 'add sliders to fit'
-        e_old_w, e_w = event
-        #t_w = e_w
-        t_w=self.size().width()
-        if options.debug:
-            print 'old e_w = %d, t_w = %d' %(e_old_w, t_w)
-        if e_old_w>0 and t_w>0:
-            #use previous bands to estimate a good starter i to speed things up
-            old_i=len(self.filter_state.frequencies)
-            i=int(round(float(t_w))/e_old_w*old_i)
+        if event.oldSize().width()>0 and event.size().width()>0:
+            i=len(self.filter_state.frequencies)*int(round(float(event.size().width())/event.oldSize().width()))
         else:
-            #i=len(self.filter_state.DEFAULT_FREQUENCIES)
             i=len(self.filter_state.frequencies)
 
+        t_w=self.size().width()
         def evaluate(filter_state, target, variable):
             base_freqs=self.filter_state.freq_proper(self.filter_state.DEFAULT_FREQUENCIES)
             filter_state._set_frequency_values(subdivide(base_freqs,variable))
             new_widget=SliderArraySub(filter_state)
             w=new_widget.sizeHint().width()
-            error = target-w
-            if options.debug:
-                print 'evaluating w/ target=%s, variable=%s, result=%d, error=%d' %(str(target),str(variable),w,error)
-            return error
+            return w-target
         def searcher(initial,evaluator):
             i=initial
             def d(e): return 1 if e>=0 else -1
-            old_error=evaluator(i)
-            old_direction=d(old_error)
-            i+=old_direction
+            error=evaluator(i)
+            old_direction=d(error)
+            i-=old_direction
             while True:
                 error=evaluator(i)
                 direction=d(error)
                 if direction!=old_direction:
-                    if error>=0:
-                        #just got small enough, ok
-                        return i, error
-                    else:
-                        #just got too big, need to get smaller
-                        k=i-1
-                        return k, evaluator(k)
-                if error==old_error:
-                    #this code is here just as a precaution - it probably will never be used
-
-                    #error is not changing => we're stuck
-                    if old_direction==direction:
-                        #this case defies logic, it means the error is not getting lower even though we're trying
-                        #maybe our environment is trying to pull a fast one?
-                        print 'not oscilating but error won\'t shrink, something fishy is going on'
-                    else:
-                        #switching directions = oscilating
-                        print 'caught oscilating!'
-                    return i, error
-                #elif nerror>=error:
-                #    #we just started doing worse
-                #    print 'runaway detected'
-                #    return i, evaluator(i)
-                i+=direction
-                old_error=error
+                    k=i-1
+                    #while direction<0 and error!=0:
+                    #    k-=1
+                    #    error=evaluator(i)
+                    #    direction=d(error)
+                    return k, evaluator(k)
+                i-=direction
                 old_direction=direction
-        #the evaluating function has a side effect here on filter_state's frequencies
-        #so while searcher returns what is chosen, if the searcher found a solution
-        #it's already set
-        best_i, error = searcher(i,partial(evaluate,self.filter_state,t_w))
-        if options.debug:
-            print 'Chose bands=%d with error=%d\n' %(best_i, error)
+        searcher(i,partial(evaluate,self.filter_state,t_w))
         self.set_sub_array(SliderArraySub(self.filter_state))
         self.inhibit_resize-=1
 
 class SliderArraySub(QtGui.QWidget):
-    readFilter=QtCore.pyqtSignal()
     def __init__(self,filter_state,parent=None):
         super(SliderArraySub,self).__init__(parent)
         self.filter_state=filter_state
         self.setLayout(QtGui.QGridLayout())
         self.slider=[None]*len(self.filter_state.frequencies)
         self.label=[None]*len(self.slider)
-        self.value=[None]*len(self.slider)
         #self.setStyleSheet('padding: 0px; border-width: 0px; margin: 0px;')
-        #self.setStyleSheet('font-size: 7pt; font-family: monospace;'+outline%('blue'))
+        #self.setStyleSheet('font-family: monospace;'+outline%('blue'))
         qt=QtCore.Qt
         #self.layout().setHorizontalSpacing(1)
-        def add_slider(slider,label,value,c):
-            self.layout().addWidget(label,0,c,qt.AlignHCenter)
-            self.layout().addWidget(slider,1,c,qt.AlignHCenter)
-            self.layout().addWidget(value,2,c,qt.AlignHCenter)
-            self.layout().setColumnMinimumWidth(c,max(label.sizeHint().width(),slider.sizeHint().width(),value.sizeHint().width(), 30))
+        def add_slider(slider,label, c):
+            self.layout().addWidget(slider,0,c,qt.AlignHCenter)
+            self.layout().addWidget(label,1,c,qt.AlignHCenter)
+            self.layout().setColumnMinimumWidth(c,max(label.sizeHint().width(),slider.sizeHint().width()))
         def create_slider(slider_label):
-            class Slider(QtGui.QSlider):
-                def __init__(self, *args, **kwargs):
-                    QtGui.QSlider.__init__(self, *args, **kwargs)
-                def wheelEvent(self, event):
-                    dx = 1 if event.delta() > 0 else -1
-                    self.setValue(self.value() + dx)
-                    event.accept()
-            slider=Slider(QtCore.Qt.Vertical,self)
+            slider=QtGui.QSlider(QtCore.Qt.Vertical,self)
             label=SliderLabel(slider_label,filter_state,self)
-            value=ValueLabel(slider,filter_state,self)
-            slider.setRange(-MIN_GRANULARITY,GRANULARITY)
+            slider.setRange(-1000,2000)
             slider.setSingleStep(1)
-            slider.setPageStep(10)
-            return (slider,label,value)
-        self.preamp_slider,self.preamp_label,self.preamp_value=create_slider('Preamp')
-        add_slider(self.preamp_slider,self.preamp_label,self.preamp_value,0)
+            return (slider,label)
+        self.preamp_slider,self.preamp_label=create_slider('Preamp')
+        add_slider(self.preamp_slider,self.preamp_label,0)
         for i,hz in enumerate(self.filter_state.frequencies):
-            slider,label,value=create_slider(self.hz2label(hz))
+            slider,label=create_slider(self.hz2label(hz))
             self.slider[i]=slider
-            #slider.setStyleSheet('font-size: 7pt; font-family: monospace;'+outline%('red',))
+            #slider.setStyleSheet('font-family: monospace;'+outline%('red',))
             self.label[i]=label
-            self.value[i]=value
             c=i+1
-            add_slider(slider,label,value,i+1)
+            add_slider(slider,label,i+1)
     def hz2label(self, hz):
         if hz==0:
             label_text='DC'
@@ -476,60 +437,40 @@ class SliderArraySub(QtGui.QWidget):
                     self.label[i])
 
     def write_preamp(self, v):
-        #see write_coefficient for comments
-        #self.preamp_slider.blockSignals(True)
-        #self.preamp_slider.setValue(v)
         self.filter_state.preamp=self.slider2coef(v)
         self.filter_state.seed()
-        #self.preamp_slider.blockSignals(False)
-        self.preamp_value.update()
     def sync_preamp(self):
         self.preamp_slider.blockSignals(True)
         self.preamp_slider.setValue(self.coef2slider(self.filter_state.preamp))
         self.preamp_slider.blockSignals(False)
-        self.preamp_value.update()
+
+
     def write_coefficient(self,i,v):
-        self.filter_state.coefficients[i]=self.slider2coef(v)
+        self.filter_state.coefficients[i]=self.slider2coef(v)/math.sqrt(2.0)
         self.filter_state.seed()
-        self.value[i].update()
     def sync_coefficient(self,i):
         slider=self.slider[i]
         slider.blockSignals(True)
-        slider.setValue(self.coef2slider(self.filter_state.coefficients[i]))
+        slider.setValue(self.coef2slider(math.sqrt(2.0)*self.filter_state.coefficients[i]))
         slider.blockSignals(False)
-        self.value[i].update()
     @staticmethod
     def slider2coef(x):
-        #map x to ~ [-1, 1], divide by dB constant and convert to linear term
-        return math.pow(10.0, x/(NORM_GRANULARITY*2.0))
+        return (1.0+(x/1000.0))
     @staticmethod
     def coef2slider(x):
-        try:
-            return int(round(math.log10(x)*2.0*NORM_GRANULARITY))
-        except ValueError, e:
-            print 'zerod number!', e
-            return -GRANULARITY
+        return int((x-1.0)*1000)
 outline='border-width: 1px; border-style: solid; border-color: %s;'
 
-SLIDER_BASE_CSS='font-size: 7pt; font-family: monospace;'
 class SliderLabel(QtGui.QLabel):
     clicked=QtCore.pyqtSignal()
     def __init__(self,label_text,filter_state,parent=None):
         super(SliderLabel,self).__init__(parent)
-        self.setStyleSheet(SLIDER_BASE_CSS)
+        self.setStyleSheet('font-family: monospace;')
         self.setText(label_text)
         self.setMinimumSize(self.sizeHint())
     def mouseDoubleClickEvent(self, event):
         self.clicked.emit()
         super(SliderLabel,self).mouseDoubleClickEvent(event)
-
-class ValueLabel(SliderLabel):
-    def __init__(self,slider,filter_state,parent=None):
-        SliderLabel.__init__(self,'0.0',filter_state,parent)
-        self.slider=slider
-    def update(self):
-        self.setText("%.1f"%(self.slider.value()*10.0/NORM_GRANULARITY))
-
 
 #until there are server side state savings, do it in the client but try and avoid
 #simulaneous broadcasting situations
@@ -549,7 +490,6 @@ class FilterState(QtCore.QObject):
         self.sync_timer=QtCore.QTimer()
         self.sync_timer.setSingleShot(True)
         self.sync_timer.timeout.connect(self.save_state)
-        self.ignores=0
 
     def get_eq_attr(self,attr):
         return self.sink_props.Get(eq_iface,attr)
@@ -557,37 +497,29 @@ class FilterState(QtCore.QObject):
         return [0]+xs+[self.sample_rate//2]
     def _set_frequency_values(self,freqs):
         self.frequencies=freqs
-        #print 'base',self.frequencies
-        self.filter_frequencies=map(lambda x: int(round(x)), \
-                self.translate_rates(self.filter_rate,self.sample_rate,
-                    self.frequencies) \
-                )
+        #print('base',self.frequencies)
+        self.filter_frequencies=[int(round(x)) for x in self.translate_rates(self.filter_rate,self.sample_rate,
+                    self.frequencies)]
         self.coefficients=[0.0]*len(self.frequencies)
         self.preamp=1.0
     def set_frequency_values(self,freqs):
         self._set_frequency_values(self.freq_proper(freqs))
     @staticmethod
     def translate_rates(dst,src,rates):
-        return list(map(lambda x: x*dst/src,rates))
+        return list([x*dst/src for x in rates])
     def seed(self):
         self.sink.SeedFilter(self.channel,self.filter_frequencies,self.coefficients,self.preamp)
         self.sync_timer.start(SYNC_TIMEOUT)
-        self.ignores+=1
     def readback(self):
-        #print 'ignore %d' %(self.ignores)
-        if self.ignores>0:
-            self.ignores-=1
-        else:
-            #print 'readback!'
-            coefs,preamp=self.sink.FilterAtPoints(self.channel,self.filter_frequencies)
-            self.coefficients=coefs
-            self.preamp=preamp
-            self.readFilter.emit()
+        coefs,preamp=self.sink.FilterAtPoints(self.channel,self.filter_frequencies)
+        self.coefficients=coefs
+        self.preamp=preamp
+        self.readFilter.emit()
     def set_filter(self,preamp,coefs):
-        self.sink.SetFilter(self.channel,dbus.Array(coefs),preamp)
+        self.sink.SetFilter(self.channel,dbus.Array(coefs),self.preamp)
         self.sync_timer.start(SYNC_TIMEOUT)
     def save_state(self):
-        print 'saving state'
+        print('saving state')
         self.sink.SaveState()
     def load_profile(self,profile):
         self.sink.LoadProfile(self.channel,dbus.String(profile))
@@ -623,8 +555,8 @@ def subdivide(xs, t_points):
     p_drop=len(xs)-t_points
     p_drop_left=p_drop//2
     p_drop_right=p_drop-p_drop_left
-    #print 'xs',xs
-    #print 'dropping %d, %d left, %d right' %(p_drop,p_drop_left,p_drop_right)
+    #print('xs',xs)
+    #print('dropping %d, %d left, %d right' %(p_drop,p_drop_left,p_drop_right))
     c=len(xs)//2
     left=xs[0:p_drop_left*2:2]+xs[p_drop_left*2:c]
     right=list(reversed(xs[c:]))
@@ -632,16 +564,9 @@ def subdivide(xs, t_points):
     right=list(reversed(right))
     return left+right
 
-import optparse
-options = None
 def main():
-
-    parser = optparse.OptionParser()
-    parser.add_option("-d", "--debug", action="store_true", dest="debug")
-    global options
-    options, args = parser.parse_args(sys.argv)
     dbus.mainloop.qt.DBusQtMainLoop(set_as_default=True)
-    app=QtGui.QApplication(args)
+    app=QtGui.QApplication(sys.argv)
     qpaeq_main=QPaeq()
     qpaeq_main.show()
     sys.exit(app.exec_())
